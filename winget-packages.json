@@ -70,9 +70,6 @@
 					"PackageIdentifier" : "Anthropic.Claude"
 				},
 				{
-					"PackageIdentifier" : "Microsoft.Teams"
-				},
-				{
 					"PackageIdentifier" : "Microsoft.AppInstaller"
 				},
 				{

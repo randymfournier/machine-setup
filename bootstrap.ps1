@@ -3,8 +3,20 @@
 #   cd C:\machine-setup
 #   .\bootstrap.ps1
 #
-# Idempotent -- safe to re-run. Skip steps with -Skip:
-#   .\bootstrap.ps1 -Skip windows,wsl
+# Idempotent -- safe to re-run.
+#
+# Skip steps with -Skip (use the lowercase keys below):
+#   .\bootstrap.ps1 -Skip windows,updates,wsl,dotfiles
+#
+# Available skip keys:
+#   windows     -- Windows tweaks (taskbar, dark mode, perf)
+#   debloat     -- only runs when -IncludeDebloat is also passed
+#   updates     -- Windows updates
+#   winget      -- winget package import
+#   toolchains  -- fnm, uv, Rust, fonts, etc.
+#   vscode      -- VS Code extensions
+#   dotfiles    -- copy PowerShell profile, starship, etc.
+#   wsl         -- WSL2 + Ubuntu install
 #
 # Opt in to debloat (removes Teams, Xbox, Bing, etc.):
 #   .\bootstrap.ps1 -IncludeDebloat
@@ -24,36 +36,38 @@ if (-NOT ([Security.Principal.WindowsPrincipal][Security.Principal.WindowsIdenti
     exit 1
 }
 
-function Step($name) {
-    if ($name -in $Skip) {
-        Write-Host "`n[SKIP] $name" -ForegroundColor Yellow
+# Belt-and-suspenders: unblock any internet-marked files in the repo so
+# child scripts can run regardless of execution policy.
+Get-ChildItem -Path $RepoRoot -Recurse -File | Unblock-File -ErrorAction SilentlyContinue
+
+function Step($key, $heading) {
+    if ($key -in $Skip) {
+        Write-Host "`n[SKIP] $heading ($key)" -ForegroundColor Yellow
         return $false
     }
     Write-Host "`n========================================" -ForegroundColor Green
-    Write-Host "  $name" -ForegroundColor Green
+    Write-Host "  $heading" -ForegroundColor Green
     Write-Host "========================================" -ForegroundColor Green
     return $true
 }
 
 # --- 1. Apply Windows tweaks (taskbar, perf, dark mode, etc.) -------------
-if (Step "Windows tweaks") {
+if (Step "windows" "Windows tweaks") {
     & "$RepoRoot\windows\apply-tweaks.ps1"
 }
 
-# --- 1b. Debloat (OPT-IN: only runs when explicitly requested) ------------
-# Pass -IncludeDebloat to bootstrap.ps1 to run this step.
-# Removes Teams, Xbox, Bing, etc. Read windows\debloat.ps1 first.
-if ($IncludeDebloat -and (Step "Debloat")) {
+# --- 1b. Debloat (OPT-IN: only runs when -IncludeDebloat passed) ----------
+if ($IncludeDebloat -and (Step "debloat" "Debloat")) {
     & "$RepoRoot\windows\debloat.ps1"
 }
 
 # --- 2. Bulk-install Windows updates --------------------------------------
-if (Step "Windows updates") {
+if (Step "updates" "Windows updates") {
     & "$RepoRoot\windows\update-windows.ps1"
 }
 
 # --- 3. Install all winget packages ---------------------------------------
-if (Step "winget packages") {
+if (Step "winget" "winget packages") {
     winget import -i "$RepoRoot\winget-packages.json" --accept-package-agreements --accept-source-agreements --ignore-unavailable
     # PATH refresh
     $env:Path = [System.Environment]::GetEnvironmentVariable('Path','Machine') + ';' +
@@ -61,12 +75,12 @@ if (Step "winget packages") {
 }
 
 # --- 4. Install dev toolchains (fnm, uv, Rust, Tauri prereqs, fonts) -----
-if (Step "Dev toolchains") {
+if (Step "toolchains" "Dev toolchains") {
     & "$RepoRoot\dev\install-toolchains.ps1"
 }
 
 # --- 5. VS Code extensions -------------------------------------------------
-if (Step "VS Code extensions") {
+if (Step "vscode" "VS Code extensions") {
     if (Get-Command code -ErrorAction SilentlyContinue) {
         Get-Content "$RepoRoot\dev\vscode-extensions.txt" |
             Where-Object { $_ -and -not $_.StartsWith('#') } |
@@ -77,7 +91,7 @@ if (Step "VS Code extensions") {
 }
 
 # --- 6. Copy dotfiles into place ------------------------------------------
-if (Step "Dotfiles") {
+if (Step "dotfiles" "Dotfiles") {
     # PowerShell profile
     $profileDir = Split-Path -Parent $PROFILE
     if (-not (Test-Path $profileDir)) { New-Item -ItemType Directory -Path $profileDir -Force | Out-Null }
@@ -101,7 +115,7 @@ if (Step "Dotfiles") {
 }
 
 # --- 7. WSL2 + Ubuntu ------------------------------------------------------
-if (Step "WSL2") {
+if (Step "wsl" "WSL2") {
     & "$RepoRoot\wsl\setup-wsl.ps1"
 }
 
