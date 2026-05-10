@@ -1,0 +1,25 @@
+# Repo-wide ignore — keeps secrets out of git no matter where they're put.
+
+# Never commit private keys
+*.pem
+*.key
+*.pfx
+*.p12
+id_rsa
+id_ed25519
+id_ecdsa
+
+# Never commit env files
+.env
+.env.*
+!.env.example
+
+# OS / editor noise
+.DS_Store
+Thumbs.db
+desktop.ini
+.vscode/
+.idea/
+
+# Local-only customizations (e.g., a real .gitconfig with your actual email)
+*.local

@@ -1,0 +1,61 @@
+# ~/.gitignore_global
+# Things to never commit, regardless of project.
+
+# --- OS ---
+.DS_Store
+Thumbs.db
+desktop.ini
+$RECYCLE.BIN/
+
+# --- Editors ---
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+.project
+.classpath
+
+# --- Logs / temp ---
+*.log
+logs/
+*.tmp
+*.bak
+
+# --- Secrets — last line of defense ---
+.env
+.env.local
+.env.*.local
+*.pem
+*.key
+secrets.json
+
+# --- Python ---
+__pycache__/
+*.py[cod]
+*.egg-info/
+.venv/
+venv/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+
+# --- Node ---
+node_modules/
+npm-debug.log
+yarn-error.log
+.pnpm-debug.log
+
+# --- Rust ---
+target/
+Cargo.lock          # (only ignore for libraries — comment out for binaries)
+
+# --- Tauri ---
+src-tauri/target/
+
+# --- Go ---
+bin/
+pkg/
+
+# --- Docker ---
+.docker/

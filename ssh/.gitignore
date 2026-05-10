@@ -1,0 +1,5 @@
+# ssh/.gitignore
+# Belt and suspenders. Ignore everything in this folder except this README.
+*
+!README.md
+!.gitignore

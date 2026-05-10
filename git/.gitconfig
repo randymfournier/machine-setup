@@ -1,0 +1,66 @@
+# ~/.gitconfig
+# EDIT THE [user] SECTION BELOW with your name + email after first run.
+
+[user]
+    name = rmfournier
+    email = 186494476+randymfournier@users.noreply.github.com
+    # If you sign commits with SSH:
+    # signingkey = ~/.ssh/id_ed25519.pub
+
+[init]
+    defaultBranch = main
+
+[core]
+    autocrlf = true                # Windows: convert LF -> CRLF on checkout
+    excludesfile = ~/.gitignore_global
+    editor = code --wait
+    longpaths = true               # required for some node_modules nightmares
+
+[pull]
+    rebase = false                 # merge, don't rebase pulls (safer default)
+
+[push]
+    autoSetupRemote = true         # so `git push` on a new branch just works
+    default = simple
+
+[fetch]
+    prune = true                   # auto-clean deleted remote branches
+
+[diff]
+    colorMoved = zebra
+
+[merge]
+    conflictstyle = zdiff3         # 3-way conflict markers, much clearer
+
+# Uncomment to sign commits with your SSH key:
+# [commit]
+#     gpgsign = true
+# [tag]
+#     gpgsign = true
+# [gpg]
+#     format = ssh
+
+[credential]
+    helper = manager
+
+[alias]
+    s = status -sb
+    co = checkout
+    cm = commit -m
+    cma = commit -am
+    a = add
+    aa = add --all
+    p = push
+    pl = pull
+    b = branch
+    last = log -1 HEAD
+    unstage = reset HEAD --
+    undo = reset --soft HEAD~1
+    lg = log --color --graph --pretty=format:'%Cred%h%Creset -%C(yellow)%d%Creset %s %Cgreen(%cr) %C(bold blue)<%an>%Creset' --abbrev-commit
+    aliases = config --get-regexp ^alias\\.
+
+[rerere]
+    enabled = true                 # remember conflict resolutions
+
+[help]
+    autocorrect = prompt           # "did you mean..." instead of running unknowns
