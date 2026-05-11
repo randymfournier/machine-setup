@@ -23,3 +23,7 @@ desktop.ini
 
 # Local-only customizations (e.g., a real .gitconfig with your actual email)
 *.local
+
+# Generated installer/bootstrap logs
+logs/
+*.log

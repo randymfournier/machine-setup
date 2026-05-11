@@ -53,11 +53,8 @@ $searchPath = "HKCU:\Software\Policies\Microsoft\Windows\Explorer"
 if (-not (Test-Path $searchPath)) { New-Item -Path $searchPath -Force | Out-Null }
 Set-ItemProperty -Path $searchPath -Name "DisableSearchBoxSuggestions" -Value 1 -Type DWord
 
-# --- Disable Widgets and Chat from taskbar ---------------------------------
-Set-ItemProperty -Path "HKCU:\Software\Microsoft\Windows\CurrentVersion\Explorer\Advanced" `
-    -Name "TaskbarDa" -Value 0 -Type DWord  # widgets
-Set-ItemProperty -Path "HKCU:\Software\Microsoft\Windows\CurrentVersion\Explorer\Advanced" `
-    -Name "TaskbarMn" -Value 0 -Type DWord  # chat
+# Widgets / Chat / Copilot taskbar buttons are version-sensitive on current
+# Windows 11 builds. Keep those as manual UI cleanup tasks in manual-steps.md.
 
 # --- Restart Explorer to apply -----------------------------------------
 Stop-Process -Name explorer -Force

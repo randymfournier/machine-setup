@@ -15,6 +15,7 @@ If this machine dies, follow this README to be back at work in ~45 minutes.
 1. Boot from USB, install Windows 11.
 2. **Skip** the Microsoft account prompt if you can (use a local account; you can attach the MS account later for store apps). Or use one — your call.
 3. Connect to Wi-Fi.
+   - If the fresh ISO has no Wi-Fi driver, use Ethernet, USB tethering, or a saved vendor driver from your recovery USB. See [`manual-steps.md`](./manual-steps.md).
 
 ### Phase 2 — Run the bootstrap
 
@@ -22,15 +23,18 @@ Open **PowerShell as Administrator** and paste:
 
 ```powershell
 Set-ExecutionPolicy -Scope Process -ExecutionPolicy Bypass -Force
-irm https://raw.githubusercontent.com/<YOUR-GH-USERNAME>/machine-setup/main/quickstart.ps1 | iex
+irm https://raw.githubusercontent.com/randymfournier/machine-setup/main/quickstart.ps1 | iex
 ```
 
-(Replace `<YOUR-GH-USERNAME>` once your repo is on GitHub.)
-
 This will:
+
+- Repair/check winget before relying on it
+- Install Git if needed
 - Clone this repo to `C:\machine-setup`
 - Hand off to `bootstrap.ps1`
-- Walk you through admin prompts as needed
+- Show step progress
+- Continue past recoverable failures
+- Write a full log and JSON summary to `C:\machine-setup\logs\`
 
 **To also strip Windows bloat (Teams, Xbox, Bing, etc.) during bootstrap:** after the clone, run instead:
 
@@ -48,10 +52,19 @@ Run for further tweaking:
 ### Phase 3 — Manual finishing touches
 
 After `bootstrap.ps1` completes, see:
+
 - [`accounts-checklist.md`](./accounts-checklist.md) — services to log back into
-- [`manual-steps.md`](./manual-steps.md) — things scripts can't automate (M365, BIOS, drivers)
+- [`manual-steps.md`](./manual-steps.md) — Wi-Fi fallback, M365, BIOS, drivers, taskbar extras
 - [`ssh/README.md`](./ssh/README.md) — restore SSH keys from your encrypted Proton Drive backup
 - [`modding/ue4ss-icarus.md`](./modding/ue4ss-icarus.md) — Icarus modding tools
+
+If anything failed, check the latest files in:
+
+```text
+C:\machine-setup\logs\
+```
+
+The bootstrap is designed to finish the checklist and report failures at the end instead of stopping at the first error.
 
 ## Repo layout
 
@@ -59,18 +72,19 @@ After `bootstrap.ps1` completes, see:
 machine-setup/
 ├── README.md                    ← you are here
 ├── quickstart.ps1               ← the irm | iex entry point
-├── bootstrap.ps1                ← orchestrator, run after install
+├── bootstrap.ps1                ← resilient orchestrator, run after install
 ├── winget-packages.json         ← all Windows apps
 ├── ssh-keys-backup-NOW.md       ← do this TODAY, not on recovery day
 ├── accounts-checklist.md        ← post-restore login checklist
 ├── manual-steps.md              ← M365, BIOS, drivers, etc.
 ├── slipstream-iso.md            ← build pre-updated install USBs
-├── windows/                     ← Windows tweaks + update bulk-install
-├── dev/                         ← language toolchains, VS Code config
+├── windows/                     ← Windows tweaks + update/debloat scripts
+├── dev/                         ← language toolchains, VS C++ workload, VS Code config
 ├── shell/                       ← PowerShell profile, Starship, Terminal
 ├── git/                         ← .gitconfig, global gitignore
 ├── ssh/                         ← key restore docs (NEVER the keys)
 ├── wsl/                         ← Ubuntu 24.04 setup
+├── logs/                        ← generated bootstrap logs, not committed
 └── modding/                     ← Icarus / UE4SS notes
 ```
 
