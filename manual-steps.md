@@ -2,29 +2,49 @@
 
 Things `bootstrap.ps1` can't fully do for you. Work through these once after recovery.
 
-## 1. Network / Wi-Fi driver fallback
+## 1. Network / Wi-Fi + touchpad driver fallback
 
-A fresh Windows ISO may not include your Wi-Fi driver.
+A fresh Windows ISO may not include your Wi-Fi driver. On this machine, Wi-Fi appears to be MediaTek. Touchpad vendor is not confirmed yet.
 
-If Wi-Fi is missing after install:
+Export the two useful driver categories from the working install now:
+
+```powershell
+cd C:\machine-setup
+.\drivers\export-selected-drivers.ps1 -ListCandidates
+```
+
+Copy the resulting `drivers\exported-selected-yyyy-mm-dd\` folder to your recovery USB.
+
+If Wi-Fi or touchpad is missing after the next fresh install, run this from the recovery USB in PowerShell as Administrator:
+
+```powershell
+.\drivers\install-exported-drivers.ps1 -Source D:\drivers\exported-selected-yyyy-mm-dd
+```
+
+Fallbacks if the saved driver folder is not available:
 
 - Use Ethernet temporarily, if available.
 - Or USB-tether from your phone long enough to run Windows Update / bootstrap.
-- Or keep the vendor Wi-Fi/LAN driver installer on your recovery USB.
+- Or keep the vendor Wi-Fi/touchpad driver installers on your recovery USB.
 
-**Maintenance habit:** add your exact motherboard/laptop network driver link here after the next successful recovery.
+**Maintenance habit:** after a successful recovery, update the exact driver names here.
 
-```
-Wi-Fi/LAN driver link: [fill in]
+```text
+Wi-Fi driver:     MediaTek / [exact exported INF]
+Touchpad driver: [fill in after export-selected-drivers.ps1 -ListCandidates]
 ```
 
 ## 2. Visual Studio 2022 — C++ workload fallback
 
-`bootstrap.ps1` now tries to install/modify Visual Studio automatically with:
+`bootstrap.ps1` now tries to install/modify Visual Studio automatically with visible heartbeat output. It bypasses winget and downloads the Visual Studio Build Tools bootstrapper directly if needed.
+
+It installs:
 
 - **Desktop development with C++** / `Microsoft.VisualStudio.Workload.NativeDesktop`
 
 This is required for Rust/Tauri/native builds because `cargo` needs the MSVC linker: `link.exe`.
+
+If it looks like it is hanging, check the console heartbeat lines first. The installer is silent, but the script now prints elapsed-time status while the installer process is still running.
 
 If the `visualstudio` step fails, use this fallback:
 

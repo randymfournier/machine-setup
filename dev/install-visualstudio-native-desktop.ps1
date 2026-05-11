@@ -5,6 +5,10 @@
 #
 # Preferred result:
 #   Visual Studio / Build Tools has the Desktop development with C++ workload.
+#
+# Important:
+#   This script does NOT depend on winget. If winget/msstore sources are broken,
+#   it can still download the Visual Studio Build Tools bootstrapper directly.
 
 $ErrorActionPreference = 'Stop'
 
@@ -13,11 +17,58 @@ $VcToolsComponentId = 'Microsoft.VisualStudio.Component.VC.Tools.x86.x64'
 $VsInstallerDir = Join-Path ${env:ProgramFiles(x86)} 'Microsoft Visual Studio\Installer'
 $SetupExe = Join-Path $VsInstallerDir 'setup.exe'
 $VsWhereExe = Join-Path $VsInstallerDir 'vswhere.exe'
+$TempRoot = Join-Path $env:TEMP 'machine-setup-installs'
+$BuildToolsBootstrapper = Join-Path $TempRoot 'vs_BuildTools.exe'
+$BuildToolsUrl = 'https://aka.ms/vs/17/release/vs_BuildTools.exe'
+
+New-Item -ItemType Directory -Path $TempRoot -Force | Out-Null
 
 function Refresh-Path {
     $machinePath = [System.Environment]::GetEnvironmentVariable('Path','Machine')
     $userPath = [System.Environment]::GetEnvironmentVariable('Path','User')
     $env:Path = @($machinePath, $userPath) -join ';'
+}
+
+function Format-Elapsed {
+    param([Parameter(Mandatory=$true)][TimeSpan]$Elapsed)
+    if ($Elapsed.TotalHours -ge 1) {
+        return ('{0:00}:{1:00}:{2:00}' -f [int]$Elapsed.TotalHours, $Elapsed.Minutes, $Elapsed.Seconds)
+    }
+    return ('{0:00}:{1:00}' -f $Elapsed.Minutes, $Elapsed.Seconds)
+}
+
+function Invoke-ProcessWithHeartbeat {
+    param(
+        [Parameter(Mandatory=$true)][string]$FilePath,
+        [Parameter(Mandatory=$true)][string]$ArgumentList,
+        [Parameter(Mandatory=$true)][string]$Activity,
+        [int]$HeartbeatSeconds = 15
+    )
+
+    Write-Host "Starting: $Activity" -ForegroundColor Cyan
+    Write-Host "> `"$FilePath`" $ArgumentList" -ForegroundColor DarkGray
+
+    $process = Start-Process -FilePath $FilePath -ArgumentList $ArgumentList -PassThru
+    $sw = [System.Diagnostics.Stopwatch]::StartNew()
+    $tick = 0
+
+    while (-not $process.HasExited) {
+        Start-Sleep -Seconds $HeartbeatSeconds
+        $tick++
+        $elapsed = Format-Elapsed -Elapsed $sw.Elapsed
+        $percent = ($tick * 7) % 95
+        Write-Progress -Activity $Activity -Status "Still running... elapsed $elapsed" -PercentComplete $percent
+        Write-Host "  [$elapsed] $Activity still running..." -ForegroundColor DarkGray
+        try { $process.Refresh() } catch { }
+    }
+
+    $sw.Stop()
+    Write-Progress -Activity $Activity -Completed
+
+    $elapsedFinal = Format-Elapsed -Elapsed $sw.Elapsed
+    Write-Host "Finished: $Activity in $elapsedFinal with exit code $($process.ExitCode)." -ForegroundColor Cyan
+
+    return $process.ExitCode
 }
 
 function Get-VisualStudioInstallPaths {
@@ -69,6 +120,25 @@ function Find-MsvcLinker {
     return $found
 }
 
+function Wait-ForMsvcLinker {
+    param([int]$Seconds = 180)
+
+    $deadline = (Get-Date).AddSeconds($Seconds)
+    $attempt = 0
+
+    while ((Get-Date) -lt $deadline) {
+        $attempt++
+        $linker = Find-MsvcLinker
+        if ($linker) { return $linker }
+
+        Write-Progress -Activity 'Checking MSVC linker' -Status "Waiting for link.exe to appear... attempt $attempt" -PercentComplete (($attempt * 10) % 95)
+        Start-Sleep -Seconds 10
+    }
+
+    Write-Progress -Activity 'Checking MSVC linker' -Completed
+    return $null
+}
+
 function Invoke-VsInstallerModify {
     param([Parameter(Mandatory=$true)][string]$InstallPath)
 
@@ -79,31 +149,38 @@ function Invoke-VsInstallerModify {
     Write-Host "Adding Desktop development with C++ workload to:" -ForegroundColor Cyan
     Write-Host "  $InstallPath" -ForegroundColor DarkGray
 
-    $args = "modify --installPath `"$InstallPath`" --add $WorkloadId --includeRecommended --quiet --norestart"
+    $args = "modify --installPath `"$InstallPath`" --add $WorkloadId --includeRecommended --quiet --wait --norestart"
+    $exitCode = Invoke-ProcessWithHeartbeat -FilePath $SetupExe -ArgumentList $args -Activity 'Visual Studio workload modify'
 
-    $process = Start-Process -FilePath $SetupExe -ArgumentList $args -Wait -PassThru
-    if ($process.ExitCode -notin @(0, 3010)) {
-        throw "Visual Studio Installer modify failed with exit code $($process.ExitCode)."
+    if ($exitCode -notin @(0, 3010)) {
+        throw "Visual Studio Installer modify failed with exit code $exitCode."
     }
 
-    if ($process.ExitCode -eq 3010) {
+    if ($exitCode -eq 3010) {
         Write-Warning 'Visual Studio Installer reports that a reboot is required.'
     }
 }
 
-function Install-BuildToolsWithNativeDesktop {
-    if (-not (Get-Command winget -ErrorAction SilentlyContinue)) {
-        throw 'winget is required to install Visual Studio Build Tools automatically.'
+function Install-BuildToolsWithNativeDesktopDirect {
+    Write-Host 'Installing Visual Studio Build Tools directly with Desktop development with C++ workload...' -ForegroundColor Cyan
+    Write-Host 'This bypasses winget so broken winget/msstore sources do not block the MSVC linker.' -ForegroundColor DarkGray
+
+    if (-not (Test-Path $BuildToolsBootstrapper)) {
+        Write-Host "Downloading Build Tools bootstrapper to $BuildToolsBootstrapper" -ForegroundColor Cyan
+        Invoke-WebRequest -Uri $BuildToolsUrl -OutFile $BuildToolsBootstrapper -UseBasicParsing
+    } else {
+        Write-Host "Using existing bootstrapper: $BuildToolsBootstrapper" -ForegroundColor DarkGray
     }
 
-    Write-Host 'Installing Visual Studio Build Tools with Desktop development with C++ workload...' -ForegroundColor Cyan
+    $args = "--quiet --wait --norestart --add $WorkloadId --includeRecommended"
+    $exitCode = Invoke-ProcessWithHeartbeat -FilePath $BuildToolsBootstrapper -ArgumentList $args -Activity 'Visual Studio Build Tools install'
 
-    & winget install --id Microsoft.VisualStudio.BuildTools -e --source winget `
-        --accept-package-agreements --accept-source-agreements `
-        --override "--quiet --wait --norestart --add $WorkloadId --includeRecommended"
+    if ($exitCode -notin @(0, 3010)) {
+        throw "Visual Studio Build Tools installer failed with exit code $exitCode."
+    }
 
-    if ($LASTEXITCODE -ne 0) {
-        throw "winget Visual Studio Build Tools install failed with exit code $LASTEXITCODE."
+    if ($exitCode -eq 3010) {
+        Write-Warning 'Visual Studio Build Tools installer reports that a reboot is required.'
     }
 }
 
@@ -120,20 +197,16 @@ $installPaths = @(Get-VisualStudioInstallPaths)
 if ($installPaths.Count -gt 0 -and (Test-Path $SetupExe)) {
     foreach ($installPath in $installPaths) {
         Invoke-VsInstallerModify -InstallPath $installPath
-        $linker = Find-MsvcLinker
+        Refresh-Path
+        $linker = Wait-ForMsvcLinker -Seconds 180
         if ($linker) { break }
     }
-} else {
-    Install-BuildToolsWithNativeDesktop
 }
 
-Refresh-Path
-
-# Give VS setup a short moment to finish writing any final toolchain metadata.
-for ($i = 1; $i -le 12; $i++) {
-    $linker = Find-MsvcLinker
-    if ($linker) { break }
-    Start-Sleep -Seconds 10
+if (-not $linker) {
+    Install-BuildToolsWithNativeDesktopDirect
+    Refresh-Path
+    $linker = Wait-ForMsvcLinker -Seconds 240
 }
 
 if (-not $linker) {

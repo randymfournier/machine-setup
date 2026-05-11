@@ -27,3 +27,7 @@ desktop.ini
 # Generated installer/bootstrap logs
 logs/
 *.log
+
+# Local exported driver packages can be large and machine-specific.
+drivers/exported-*/
+drivers/exported-selected-*/

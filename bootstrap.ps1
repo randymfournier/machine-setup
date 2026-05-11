@@ -9,11 +9,12 @@
 #   .\bootstrap.ps1 -Skip windows,updates,wsl,dotfiles
 #
 # Available skip keys:
+#   drivers        -- local Wi-Fi/touchpad recovery driver install, if exported drivers are present
 #   windows        -- Windows tweaks (taskbar alignment, dark mode, perf)
 #   debloat        -- only runs when -IncludeDebloat is also passed
 #   updates        -- Windows updates
 #   winget-repair  -- winget/App Installer health check and repair
-#   winget         -- winget package import
+#   winget         -- winget package installs, package-by-package
 #   visualstudio   -- Visual Studio C++ workload / MSVC linker verification
 #   toolchains     -- fnm, uv, Rust, Tauri CLI, fonts, etc.
 #   vscode         -- VS Code extensions
@@ -57,7 +58,7 @@ try {
 function Refresh-Path {
     $machinePath = [System.Environment]::GetEnvironmentVariable('Path','Machine')
     $userPath = [System.Environment]::GetEnvironmentVariable('Path','User')
-    $env:Path = @($machinePath, $userPath) -join ';'
+    $env:Path = @($machinePath, $userPath, "$env:USERPROFILE\.cargo\bin") -join ';'
 }
 
 function Write-SetupHeader([string]$heading) {
@@ -67,11 +68,54 @@ function Write-SetupHeader([string]$heading) {
     Write-Host "========================================" -ForegroundColor Green
 }
 
+function Invoke-LoggedNativeCommand {
+    param(
+        [Parameter(Mandatory=$true)][string]$FilePath,
+        [Parameter(Mandatory=$true)][string[]]$Arguments,
+        [switch]$ThrowOnFailure
+    )
+
+    Write-Host ("> {0} {1}" -f $FilePath, ($Arguments -join ' ')) -ForegroundColor DarkGray
+    $output = & $FilePath @Arguments 2>&1
+    $exitCode = $LASTEXITCODE
+
+    if ($output) {
+        $output | ForEach-Object { Write-Host "  $_" -ForegroundColor DarkGray }
+    }
+
+    if ($exitCode -ne 0 -and $ThrowOnFailure) {
+        throw "$FilePath failed with exit code $exitCode."
+    }
+
+    return [pscustomobject]@{
+        ExitCode = $exitCode
+        Output = @($output)
+    }
+}
+
+function Test-WingetCommandAvailable {
+    return [bool](Get-Command winget -ErrorAction SilentlyContinue)
+}
+
 function Test-WingetHealthy {
-    if (-not (Get-Command winget -ErrorAction SilentlyContinue)) {
+    if (-not (Test-WingetCommandAvailable)) {
         Write-Warning "winget is not on PATH."
         return $false
     }
+
+    $output = & winget --version 2>&1
+    if ($LASTEXITCODE -ne 0) {
+        Write-Warning "winget --version failed: $($output -join ' ')"
+        return $false
+    }
+
+    return $true
+}
+
+function Test-WingetSourceHealthy {
+    param([Parameter(Mandatory=$true)][string]$SourceName)
+
+    if (-not (Test-WingetHealthy)) { return $false }
 
     $output = & winget source list 2>&1
     if ($LASTEXITCODE -ne 0) {
@@ -79,30 +123,119 @@ function Test-WingetHealthy {
         return $false
     }
 
-    return $true
+    $joined = $output -join "`n"
+    return ($joined -match "(?im)^\s*$([regex]::Escape($SourceName))\s")
 }
 
 function Repair-Winget {
     Write-Host "Repairing App Installer / winget sources..." -ForegroundColor Cyan
+    Write-Host "This step is best-effort. If source reset still fails, package installs will continue package-by-package." -ForegroundColor DarkGray
 
     $bundlePath = Join-Path $env:TEMP 'winget.msixbundle'
-    Invoke-WebRequest -Uri 'https://aka.ms/getwinget' -OutFile $bundlePath -UseBasicParsing
-    Add-AppxPackage -Path $bundlePath
+
+    try {
+        Invoke-WebRequest -Uri 'https://aka.ms/getwinget' -OutFile $bundlePath -UseBasicParsing
+        Add-AppxPackage -Path $bundlePath -ForceApplicationShutdown
+        Write-Host "App Installer package applied from $bundlePath" -ForegroundColor Green
+    } catch {
+        Write-Warning "App Installer repair failed or was already current: $($_.Exception.Message)"
+    }
 
     Refresh-Path
 
-    & winget source reset --force
-    if ($LASTEXITCODE -ne 0) {
-        throw "winget source reset --force failed with exit code $LASTEXITCODE."
+    if (-not (Test-WingetCommandAvailable)) {
+        throw 'winget is still not available after App Installer repair.'
     }
 
-    & winget source update
-    if ($LASTEXITCODE -ne 0) {
-        Write-Warning "winget source update returned exit code $LASTEXITCODE. Continuing after reset."
+    $reset = Invoke-LoggedNativeCommand -FilePath 'winget' -Arguments @('source','reset','--force')
+    if ($reset.ExitCode -ne 0) {
+        Write-Warning "winget source reset --force failed with exit code $($reset.ExitCode). Continuing anyway."
+    }
+
+    $update = Invoke-LoggedNativeCommand -FilePath 'winget' -Arguments @('source','update')
+    if ($update.ExitCode -ne 0) {
+        Write-Warning "winget source update failed with exit code $($update.ExitCode). Continuing anyway."
     }
 
     if (-not (Test-WingetHealthy)) {
-        throw "winget still does not appear healthy after repair."
+        throw 'winget command still does not appear healthy after repair.'
+    }
+
+    Write-Host 'winget command is available. Individual sources will be tested during package installs.' -ForegroundColor Green
+}
+
+function Install-WingetPackagesFromManifest {
+    param([Parameter(Mandatory=$true)][string]$ManifestPath)
+
+    if (-not (Test-Path $ManifestPath)) {
+        throw "winget manifest not found: $ManifestPath"
+    }
+
+    if (-not (Test-WingetHealthy)) {
+        throw 'winget is not available enough to install packages.'
+    }
+
+    $manifest = Get-Content -Path $ManifestPath -Raw | ConvertFrom-Json
+    $failures = New-Object System.Collections.Generic.List[string]
+    $installed = 0
+    $skipped = 0
+
+    foreach ($source in $manifest.Sources) {
+        $sourceName = $source.SourceDetails.Name
+        if (-not $sourceName) { $sourceName = 'winget' }
+
+        Write-Host ""
+        Write-Host "Source: $sourceName" -ForegroundColor Cyan
+
+        if (-not (Test-WingetSourceHealthy -SourceName $sourceName)) {
+            Write-Warning "Source '$sourceName' did not pass a source-list check. Attempting packages anyway so one bad source check does not skip the whole manifest."
+        }
+
+        foreach ($pkg in $source.Packages) {
+            $id = $pkg.PackageIdentifier
+            if (-not $id) { continue }
+
+            Write-Host ""
+            Write-Host "Installing/checking $id ..." -ForegroundColor Cyan
+
+            $args = @(
+                'install',
+                '--id', $id,
+                '-e',
+                '--source', $sourceName,
+                '--accept-package-agreements',
+                '--accept-source-agreements',
+                '--silent',
+                '--disable-interactivity'
+            )
+
+            $result = Invoke-LoggedNativeCommand -FilePath 'winget' -Arguments $args
+
+            if ($result.ExitCode -eq 0) {
+                $installed++
+                Write-Host "[OK] $id" -ForegroundColor Green
+            } else {
+                $text = ($result.Output -join ' ')
+                if ($text -match 'No available upgrade|already installed|No newer package versions') {
+                    $skipped++
+                    Write-Host "[OK] $id already installed/current" -ForegroundColor Green
+                } else {
+                    $failures.Add("$id :: winget exit code $($result.ExitCode)") | Out-Null
+                    Write-Host "[FAILED] $id" -ForegroundColor Red
+                    Write-Host "  Continuing with next package." -ForegroundColor DarkYellow
+                }
+            }
+        }
+    }
+
+    Write-Host ""
+    Write-Host "winget package pass complete: $installed installed, $skipped already current, $($failures.Count) failed." -ForegroundColor Cyan
+
+    if ($failures.Count -gt 0) {
+        Write-Host ""
+        Write-Host "winget package failures:" -ForegroundColor Yellow
+        $failures | ForEach-Object { Write-Host "  - $_" -ForegroundColor Yellow }
+        throw "$($failures.Count) winget package(s) failed. See log for details."
     }
 }
 
@@ -170,6 +303,24 @@ try {
     Get-ChildItem -Path $RepoRoot -Recurse -File | Unblock-File -ErrorAction SilentlyContinue
 
     $Steps = @()
+    $Steps += [pscustomobject]@{ Key = 'drivers'; Heading = 'Local Wi-Fi/touchpad recovery drivers'; Action = {
+        $driverInstaller = Join-Path $RepoRoot 'drivers\install-exported-drivers.ps1'
+        if (-not (Test-Path $driverInstaller)) {
+            Write-Host 'Driver installer script not found. Skipping local driver pass.' -ForegroundColor DarkGray
+            return
+        }
+
+        try {
+            & $driverInstaller
+        } catch {
+            $message = $_.Exception.Message
+            if ($message -match 'Driver source folder not found|No \.inf files were found') {
+                Write-Host 'No local exported driver folder found. Skipping local driver pass.' -ForegroundColor DarkGray
+            } else {
+                throw
+            }
+        }
+    } }
     $Steps += [pscustomobject]@{ Key = 'windows'; Heading = 'Windows tweaks'; Action = { & (Join-Path $RepoRoot 'windows\apply-tweaks.ps1') } }
 
     if ($IncludeDebloat) {
@@ -188,18 +339,14 @@ try {
     $Steps += [pscustomobject]@{ Key = 'updates'; Heading = 'Windows updates'; Action = { & (Join-Path $RepoRoot 'windows\update-windows.ps1') } }
     $Steps += [pscustomobject]@{ Key = 'winget-repair'; Heading = 'winget health / repair'; Action = {
         if (Test-WingetHealthy) {
-            Write-Host 'winget sources look healthy.' -ForegroundColor DarkGray
-        } else {
-            Repair-Winget
+            Write-Host 'winget command is available. Running source repair/check anyway because fresh installs can have broken source metadata.' -ForegroundColor DarkGray
         }
-    } }
-    $Steps += [pscustomobject]@{ Key = 'winget'; Heading = 'winget packages'; Action = {
-        & winget import -i (Join-Path $RepoRoot 'winget-packages.json') --accept-package-agreements --accept-source-agreements --ignore-unavailable
-        if ($LASTEXITCODE -ne 0) {
-            throw "winget import failed with exit code $LASTEXITCODE."
-        }
+        Repair-Winget
     } }
     $Steps += [pscustomobject]@{ Key = 'visualstudio'; Heading = 'Visual Studio C++ workload / MSVC linker'; Action = { & (Join-Path $RepoRoot 'dev\install-visualstudio-native-desktop.ps1') } }
+    $Steps += [pscustomobject]@{ Key = 'winget'; Heading = 'winget packages'; Action = {
+        Install-WingetPackagesFromManifest -ManifestPath (Join-Path $RepoRoot 'winget-packages.json')
+    } }
     $Steps += [pscustomobject]@{ Key = 'toolchains'; Heading = 'Dev toolchains'; Action = { & (Join-Path $RepoRoot 'dev\install-toolchains.ps1') } }
     $Steps += [pscustomobject]@{ Key = 'vscode'; Heading = 'VS Code extensions'; Action = {
         if (Get-Command code -ErrorAction SilentlyContinue) {
