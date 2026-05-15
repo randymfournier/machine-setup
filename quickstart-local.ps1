@@ -3,15 +3,15 @@
 # has no Wi-Fi and/or no usable touchpad yet.
 #
 # Easiest path from USB:
-#   Run Start-MachineSetup.cmd
+#   Run _START_HERE.cmd
 #
 # Keyboard-only fallback, replacing D: with the USB drive letter:
-#   D:\Start-MachineSetup.cmd
+#   D:\_START_HERE.cmd
 #
 # This script does not need Git or winget. It installs saved local drivers,
-# copies this repo to C:\machine-setup, then launches setup-wizard.ps1 with
+# copies this repo to C:\machine-setup, then launches setup.ps1 with
 # -NoProfile and -ExecutionPolicy Bypass. If the wizard is missing, it falls
-# back to bootstrap.ps1.
+# back to legacy compatibility launchers.
 
 $ErrorActionPreference = 'Stop'
 
@@ -38,7 +38,7 @@ Write-Host "Source: $SourceRoot" -ForegroundColor Cyan
 Write-Host "Target: $RepoPath" -ForegroundColor Cyan
 
 # Install exported drivers before doing anything network-dependent.
-$driverInstaller = Join-Path $SourceRoot 'drivers\install-exported-drivers.ps1'
+$driverInstaller = Join-Path $SourceRoot 'legacy\drivers\install-exported-drivers.ps1'
 if (Test-Path $driverInstaller) {
     Write-Host "`nInstalling saved Wi-Fi/touchpad recovery drivers if present..." -ForegroundColor Cyan
     try {
@@ -73,22 +73,28 @@ try {
     Write-Warning "Could not unblock all repo files: $($_.Exception.Message)"
 }
 
-$wizardPath = Join-Path $RepoPath 'setup-wizard.ps1'
-$bootstrapPath = Join-Path $RepoPath 'bootstrap.ps1'
+$setupPath = Join-Path $RepoPath 'setup.ps1'
+$wizardPath = Join-Path $RepoPath 'legacy\setup-wizard-wrapper.ps1'
+$bootstrapPath = Join-Path $RepoPath 'legacy\bootstrap.ps1'
 
-if (Test-Path $wizardPath) {
-    Write-Host "`nLaunching setup-wizard.ps1 with -NoProfile and -ExecutionPolicy Bypass...`n" -ForegroundColor Green
-    & powershell.exe -NoLogo -NoProfile -ExecutionPolicy Bypass -File $wizardPath
+if (Test-Path $setupPath) {
+    Write-Host "`nLaunching setup.ps1 with -NoProfile and -ExecutionPolicy Bypass...`n" -ForegroundColor Green
+    & powershell.exe -NoLogo -NoProfile -ExecutionPolicy Bypass -File $setupPath
     $setupExit = $LASTEXITCODE
 
     if ($setupExit -ne 0) {
-        Write-Warning "setup-wizard.ps1 finished with exit code $setupExit. Check C:\machine-setup\logs for details."
+        Write-Warning "setup.ps1 finished with exit code $setupExit. Check C:\machine-setup\logs for details."
     }
 
     exit $setupExit
 }
 
-Write-Warning "setup-wizard.ps1 was not found. Falling back to bootstrap.ps1."
+Write-Warning "setup.ps1 was not found. Falling back to legacy compatibility launchers."
+if (Test-Path $wizardPath) {
+    & powershell.exe -NoLogo -NoProfile -ExecutionPolicy Bypass -File $wizardPath
+    exit $LASTEXITCODE
+}
+
 & powershell.exe -NoLogo -NoProfile -ExecutionPolicy Bypass -File $bootstrapPath
 $bootstrapExit = $LASTEXITCODE
 

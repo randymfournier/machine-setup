@@ -1,7 +1,7 @@
 # usb/prepare-recovery-usb.ps1
 # Copies machine-setup to a recovery USB and writes easy launch/readme files.
 # Does not attempt USB AutoRun or Windows Setup auto-launch.
-# Run from the setup wizard Toolkit, or directly on a working machine.
+# Run from setup.ps1 Recovery / maintenance tools, or directly on a working machine.
 
 [CmdletBinding()]
 param(
@@ -12,7 +12,7 @@ param(
 $ErrorActionPreference = 'Stop'
 try { [Console]::OutputEncoding = [System.Text.Encoding]::UTF8 } catch { }
 
-$RepoRoot = Split-Path -Parent $PSScriptRoot
+$RepoRoot = Split-Path -Parent (Split-Path -Parent $PSScriptRoot)
 
 function Assert-Admin {
     if (-NOT ([Security.Principal.WindowsPrincipal][Security.Principal.WindowsIdentity]::GetCurrent()).IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator)) {
@@ -69,7 +69,7 @@ Fresh install with no Wi-Fi/touchpad:
   1. Open PowerShell as Administrator.
   2. Run this from the USB drive, replacing D: if needed:
 
-     D:\Start-MachineSetup.cmd
+     D:\_START_HERE.cmd
 
 What this USB contains:
   - machine-setup repo
@@ -80,11 +80,11 @@ What this USB contains:
 Read:
   machine-setup\README.md
   machine-setup\usb\README.md
-  machine-setup\slipstream-iso.md
+  machine-setup\docs\slipstream-iso.md
 
 Notes:
   Modern Windows does not reliably autorun commands from USB drives for security reasons.
-  This USB gives you the shortest safe local launch path: Start-MachineSetup.cmd.
+  This USB gives you the shortest safe local launch path: _START_HERE.cmd.
 "@
 
     Set-Content -Path (Join-Path $TargetRoot 'README-FIRST.txt') -Value $content -Encoding ASCII
@@ -102,6 +102,7 @@ powershell.exe -NoLogo -NoProfile -ExecutionPolicy Bypass -File "%ROOT%machine-s
 pause
 "@
 
+    Set-Content -Path (Join-Path $TargetRoot '_START_HERE.cmd') -Value $content -Encoding ASCII
     Set-Content -Path (Join-Path $TargetRoot 'Start-MachineSetup.cmd') -Value $content -Encoding ASCII
 }
 
@@ -164,7 +165,8 @@ Write-StartCmd -TargetRoot $UsbRoot
 Write-ReadmeFirst -TargetRoot $UsbRoot
 Write-Host ""
 Write-Host "Recovery USB launch pack updated." -ForegroundColor Green
-Write-Host "Root launcher: $UsbRoot\Start-MachineSetup.cmd" -ForegroundColor Cyan
+Write-Host "Root launcher: $UsbRoot\_START_HERE.cmd" -ForegroundColor Cyan
+Write-Host "Legacy alias:  $UsbRoot\Start-MachineSetup.cmd" -ForegroundColor Cyan
 Write-Host "Read first:    $UsbRoot\README-FIRST.txt" -ForegroundColor Cyan
 Write-Host ""
-Write-Host "Note: Windows will not auto-run this USB. Use Start-MachineSetup.cmd after Windows is installed." -ForegroundColor Yellow
+Write-Host "Note: Windows will not auto-run this USB. Use _START_HERE.cmd after Windows is installed." -ForegroundColor Yellow

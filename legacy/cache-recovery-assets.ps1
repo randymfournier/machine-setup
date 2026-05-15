@@ -6,8 +6,8 @@
 $ErrorActionPreference = 'Stop'
 try { [Console]::OutputEncoding = [System.Text.Encoding]::UTF8 } catch { }
 
-$RepoRoot = $PSScriptRoot
-$InstallerDir = Join-Path $RepoRoot 'installers'
+$RepoRoot = Split-Path -Parent $PSScriptRoot
+$InstallerDir = Join-Path $RepoRoot 'assets\installers'
 New-Item -ItemType Directory -Path $InstallerDir -Force | Out-Null
 
 function Download-Asset {

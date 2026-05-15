@@ -36,7 +36,8 @@ param(
 
 $ErrorActionPreference = 'Continue'
 try { [Console]::OutputEncoding = [System.Text.Encoding]::UTF8 } catch { }
-$RepoRoot = $PSScriptRoot
+$LegacyRoot = $PSScriptRoot
+$RepoRoot = Split-Path -Parent $PSScriptRoot
 $SkipKeys = @($Skip | ForEach-Object { $_.ToLowerInvariant() })
 $OnlyKeys = @($Only | ForEach-Object { $_.ToLowerInvariant() })
 
@@ -235,7 +236,7 @@ function Repair-Winget {
     Write-Host "This step is best-effort. It will not block the rest of setup if Microsoft's source metadata hangs." -ForegroundColor DarkGray
 
     $bundlePath = Join-Path $env:TEMP 'winget.msixbundle'
-    $localBundle = Join-Path $RepoRoot 'installers\winget.msixbundle'
+    $localBundle = Join-Path $RepoRoot 'assets\installers\winget.msixbundle'
 
     try {
         if (Test-Path $localBundle) {
@@ -422,7 +423,7 @@ try {
 
     $Steps = @()
     $Steps += [pscustomobject]@{ Key = 'drivers'; Heading = 'Local Wi-Fi/touchpad recovery drivers'; Action = {
-        $driverInstaller = Join-Path $RepoRoot 'drivers\install-exported-drivers.ps1'
+        $driverInstaller = Join-Path $LegacyRoot 'drivers\install-exported-drivers.ps1'
         if (-not (Test-Path $driverInstaller)) {
             Write-Host 'Driver installer script not found. Skipping local driver pass.' -ForegroundColor DarkGray
             return
@@ -439,13 +440,13 @@ try {
             }
         }
     } }
-    $Steps += [pscustomobject]@{ Key = 'windows'; Heading = 'Windows tweaks'; Action = { & (Join-Path $RepoRoot 'windows\apply-tweaks.ps1') } }
+    $Steps += [pscustomobject]@{ Key = 'windows'; Heading = 'Windows tweaks'; Action = { & (Join-Path $LegacyRoot 'windows\apply-tweaks.ps1') } }
 
     if ($IncludeDebloat -or ('debloat' -in $OnlyKeys)) {
         $Steps += [pscustomobject]@{ Key = 'debloat'; Heading = 'Debloat'; Action = {
-            $debloatScript = Join-Path $RepoRoot 'windows\debloat.ps1'
+            $debloatScript = Join-Path $LegacyRoot 'windows\debloat.ps1'
             if (-not (Test-Path $debloatScript)) {
-                $debloatScript = Join-Path $RepoRoot 'debloat.ps1'
+                $debloatScript = Join-Path $LegacyRoot 'debloat.ps1'
             }
             if (-not (Test-Path $debloatScript)) {
                 throw 'Debloat script was not found in windows\debloat.ps1 or repo root.'
@@ -454,7 +455,7 @@ try {
         } }
     }
 
-    $Steps += [pscustomobject]@{ Key = 'updates'; Heading = 'Windows updates (no automatic reboot)'; Action = { & (Join-Path $RepoRoot 'windows\update-windows.ps1') } }
+    $Steps += [pscustomobject]@{ Key = 'updates'; Heading = 'Windows updates (no automatic reboot)'; Action = { & (Join-Path $LegacyRoot 'windows\update-windows.ps1') } }
     $Steps += [pscustomobject]@{ Key = 'winget-repair'; Heading = 'winget health / repair'; Action = {
         if (Test-WingetHealthy) {
             Write-Host 'winget command is available. Running quick source reset only; skipping source update to avoid fresh-install hangs.' -ForegroundColor DarkGray
@@ -462,13 +463,13 @@ try {
         Repair-Winget
     } }
     $Steps += [pscustomobject]@{ Key = 'winget'; Heading = 'winget packages'; Action = {
-        Install-WingetPackagesFromManifest -ManifestPath (Join-Path $RepoRoot 'winget-packages.json')
+        Install-WingetPackagesFromManifest -ManifestPath (Join-Path $RepoRoot 'assets\packages\winget-packages.json')
     } }
-    $Steps += [pscustomobject]@{ Key = 'visualstudio'; Heading = 'Visual Studio C++ workload / MSVC linker'; Action = { & (Join-Path $RepoRoot 'dev\install-visualstudio-native-desktop.ps1') } }
-    $Steps += [pscustomobject]@{ Key = 'toolchains'; Heading = 'Dev toolchains'; Action = { & (Join-Path $RepoRoot 'dev\install-toolchains.ps1') } }
+    $Steps += [pscustomobject]@{ Key = 'visualstudio'; Heading = 'Visual Studio C++ workload / MSVC linker'; Action = { & (Join-Path $LegacyRoot 'dev\install-visualstudio-native-desktop.ps1') } }
+    $Steps += [pscustomobject]@{ Key = 'toolchains'; Heading = 'Dev toolchains'; Action = { & (Join-Path $LegacyRoot 'dev\install-toolchains.ps1') } }
     $Steps += [pscustomobject]@{ Key = 'vscode'; Heading = 'VS Code extensions'; Action = {
         if (Get-Command code -ErrorAction SilentlyContinue) {
-            Get-Content (Join-Path $RepoRoot 'dev\vscode-extensions.txt') |
+            Get-Content (Join-Path $LegacyRoot 'dev\vscode-extensions.txt') |
                 Where-Object { $_ -and -not $_.StartsWith('#') } |
                 ForEach-Object { code --install-extension $_ --force }
         } else {
@@ -487,25 +488,25 @@ try {
         # PowerShell profile
         $profileDir = Split-Path -Parent $PROFILE
         if (-not (Test-Path $profileDir)) { New-Item -ItemType Directory -Path $profileDir -Force | Out-Null }
-        Copy-Item (Join-Path $RepoRoot 'shell\Microsoft.PowerShell_profile.ps1') $PROFILE -Force
+        Copy-Item (Join-Path $RepoRoot 'assets\shell\Microsoft.PowerShell_profile.ps1') $PROFILE -Force
 
         # Starship config
         $starshipConfig = "$env:USERPROFILE\.config\starship.toml"
         New-Item -ItemType Directory -Path (Split-Path $starshipConfig) -Force | Out-Null
-        Copy-Item (Join-Path $RepoRoot 'shell\starship.toml') $starshipConfig -Force
+        Copy-Item (Join-Path $RepoRoot 'assets\shell\starship.toml') $starshipConfig -Force
 
         # Windows Terminal settings (only if Terminal is installed)
         $wtSettings = "$env:LOCALAPPDATA\Packages\Microsoft.WindowsTerminal_8wekyb3d8bbwe\LocalState\settings.json"
         if (Test-Path (Split-Path $wtSettings)) {
-            Copy-Item (Join-Path $RepoRoot 'shell\windows-terminal-settings.json') $wtSettings -Force
+            Copy-Item (Join-Path $RepoRoot 'assets\shell\windows-terminal-settings.json') $wtSettings -Force
         }
 
         # Git config -- copy as template, user fills in name/email
-        Copy-Item (Join-Path $RepoRoot 'git\.gitconfig') "$env:USERPROFILE\.gitconfig" -Force
-        Copy-Item (Join-Path $RepoRoot 'git\.gitignore_global') "$env:USERPROFILE\.gitignore_global" -Force
+        Copy-Item (Join-Path $RepoRoot 'assets\git\.gitconfig') "$env:USERPROFILE\.gitconfig" -Force
+        Copy-Item (Join-Path $RepoRoot 'assets\git\.gitignore_global') "$env:USERPROFILE\.gitignore_global" -Force
         Write-Host "Remember to edit $env:USERPROFILE\.gitconfig with your name/email." -ForegroundColor Yellow
     } }
-    $Steps += [pscustomobject]@{ Key = 'wsl'; Heading = 'WSL2'; Action = { & (Join-Path $RepoRoot 'wsl\setup-wsl.ps1') } }
+    $Steps += [pscustomobject]@{ Key = 'wsl'; Heading = 'WSL2'; Action = { & (Join-Path $LegacyRoot 'wsl\setup-wsl.ps1') } }
 
     if ($OnlyKeys.Count -gt 0) {
         $requestedOnly = @($OnlyKeys)
@@ -566,11 +567,11 @@ try {
 
 NEXT STEPS:
 
-  1. Restore SSH keys      -> see ssh\README.md
+  1. Restore SSH keys      -> see docs\ssh\README.md
   2. Edit .gitconfig       -> set user.name and user.email
-  3. Log in to services    -> see accounts-checklist.md
-  4. Manual stuff          -> see manual-steps.md (M365, drivers, taskbar extras, etc.)
-  5. Modding tools         -> see modding\ue4ss-icarus.md (only if you need it)
+  3. Log in to services    -> see docs\accounts-checklist.md
+  4. Manual stuff          -> see docs\manual-steps.md (M365, drivers, taskbar extras, etc.)
+  5. Modding tools         -> see docs\modding\ue4ss-icarus.md (only if you need it)
 
 If WSL or Windows Updates were installed, reboot manually after reviewing this summary.
 "@ -ForegroundColor Cyan

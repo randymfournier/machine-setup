@@ -28,6 +28,10 @@ desktop.ini
 logs/
 *.log
 
+# Generated setup state
+state/*.json
+!state/.gitkeep
+
 # Local exported driver packages can be large and machine-specific.
 drivers/exported-*/
 drivers/exported-selected-*/
@@ -35,6 +39,8 @@ drivers/exported-selected-*/
 # Optional offline recovery assets; keep them on USB/local disk, not GitHub.
 installers/*.exe
 installers/*.msixbundle
+assets/installers/*.exe
+assets/installers/*.msixbundle
 
 # Local USB staging/export output
 usb-staging/

@@ -6,11 +6,10 @@
 #
 # This script's jobs:
 #   1. Set process execution policy bypass for this session
-#   2. Install saved local recovery drivers if an exported folder is found on USB/local disk
-#   3. Repair/check winget/App Installer enough to install Git
-#   4. Make sure Git is available
-#   5. Clone/update the repo to C:\machine-setup
-#   6. Launch setup-wizard.ps1 in a no-profile, bypassed child PowerShell process
+#   2. Repair/check winget/App Installer enough to install Git if Git is missing
+#   3. Make sure Git is available
+#   4. Clone/update the repo to C:\machine-setup
+#   5. Launch setup.ps1 in a no-profile, bypassed child PowerShell process
 
 $ErrorActionPreference = 'Stop'
 try { [Console]::OutputEncoding = [System.Text.Encoding]::UTF8 } catch { }
@@ -220,22 +219,16 @@ function Repair-Winget {
     }
 }
 
-# --- Local recovery drivers ------------------------------------------------
-# If the exported Wi-Fi/touchpad driver folder is on a USB, install it before
-# relying on winget/Git/network-heavy steps.
-Install-RecoveryDriversIfPresent
-
-# --- Ensure winget can install git -----------------------------------------
-if (-not (Test-WingetHealthy)) {
-    Repair-Winget
-} else {
-    # Fresh installs can have broken source metadata even when winget itself exists.
-    # Run the best-effort repair anyway so Git has the best chance of installing.
-    Repair-Winget
-}
-
 # --- Ensure git is installed -----------------------------------------------
 if (-not (Get-Command git -ErrorAction SilentlyContinue)) {
+    if (-not (Test-WingetHealthy)) {
+        Repair-Winget
+    } else {
+        # Fresh installs can have broken source metadata even when winget itself exists.
+        # Run the best-effort repair only because Git is missing and winget may be needed.
+        Repair-Winget
+    }
+
     Write-Host "Installing Git via winget..." -ForegroundColor Cyan
     $gitExit = Invoke-NativeBestEffort -FilePath 'winget' -Arguments @('install','--id','Git.Git','-e','--source','winget','--accept-package-agreements','--accept-source-agreements','--disable-interactivity') -TimeoutSeconds 900 -Activity 'winget install Git'
     if ($gitExit -ne 0) {
@@ -271,23 +264,29 @@ try {
     Write-Warning "Could not unblock all repo files: $($_.Exception.Message)"
 }
 
-# --- Hand off to setup wizard ---------------------------------------------
-$wizardPath = Join-Path $RepoPath 'setup-wizard.ps1'
-$bootstrapPath = Join-Path $RepoPath 'bootstrap.ps1'
+# --- Hand off to setup console --------------------------------------------
+$setupPath = Join-Path $RepoPath 'setup.ps1'
+$wizardPath = Join-Path $RepoPath 'legacy\setup-wizard-wrapper.ps1'
+$bootstrapPath = Join-Path $RepoPath 'legacy\bootstrap.ps1'
 
-if (Test-Path $wizardPath) {
-    Write-Host "`nLaunching setup-wizard.ps1 with -NoProfile and -ExecutionPolicy Bypass...`n" -ForegroundColor Green
-    & powershell.exe -NoLogo -NoProfile -ExecutionPolicy Bypass -File $wizardPath
+if (Test-Path $setupPath) {
+    Write-Host "`nLaunching setup.ps1 with -NoProfile and -ExecutionPolicy Bypass...`n" -ForegroundColor Green
+    & powershell.exe -NoLogo -NoProfile -ExecutionPolicy Bypass -File $setupPath
     $setupExit = $LASTEXITCODE
 
     if ($setupExit -ne 0) {
-        Write-Warning "setup-wizard.ps1 finished with exit code $setupExit. Check C:\machine-setup\logs for details."
+        Write-Warning "setup.ps1 finished with exit code $setupExit. Check C:\machine-setup\logs for details."
     }
 
     exit $setupExit
 }
 
-Write-Warning "setup-wizard.ps1 was not found. Falling back to bootstrap.ps1."
+Write-Warning "setup.ps1 was not found. Falling back to legacy compatibility launchers."
+if (Test-Path $wizardPath) {
+    & powershell.exe -NoLogo -NoProfile -ExecutionPolicy Bypass -File $wizardPath
+    exit $LASTEXITCODE
+}
+
 & powershell.exe -NoLogo -NoProfile -ExecutionPolicy Bypass -File $bootstrapPath
 $bootstrapExit = $LASTEXITCODE
 

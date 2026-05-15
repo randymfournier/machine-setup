@@ -10,7 +10,7 @@ Use it to:
 - install saved Wi-Fi/touchpad drivers when the fresh ISO has no network or working touchpad
 - keep local recovery assets such as `winget.msixbundle` and `vs_BuildTools.exe`
 - read the rebuild instructions even months later
-- prepare or refresh the recovery USB from the setup wizard/toolkit
+- prepare or refresh the recovery USB from the setup console tools menu
 
 ## Important: USB launch reality
 
@@ -27,15 +27,15 @@ Use one of these launch paths:
 2. No-Wi-Fi/no-touchpad local USB path:
 
    ```text
-   D:\Start-MachineSetup.cmd
+   D:\_START_HERE.cmd
    ```
 
 ## Recommended maintenance flow before a wipe
 
 From a working machine:
 
-1. Open the setup wizard.
-2. Choose `Toolkit / recovery USB utilities`.
+1. Open the setup console.
+2. Choose `Recovery / maintenance tools`.
 3. Run:
    - Export Wi-Fi/touchpad drivers
    - Cache offline recovery assets
@@ -47,7 +47,8 @@ That keeps the USB ready without needing to remember long commands.
 
 The utility copies this repo to the target USB, excluding logs and Git internals, then writes:
 
-- `Start-MachineSetup.cmd`
+- `_START_HERE.cmd`
+- `Start-MachineSetup.cmd` compatibility alias
 - `README-FIRST.txt`
 
 ## Rebuilding the bootable Windows USB

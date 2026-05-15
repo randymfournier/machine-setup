@@ -96,9 +96,9 @@ add_to_bashrc "# machine-setup: starship" \
 eval "$(starship init bash)"'
 
 # Copy the same starship config used on Windows
-if [ -f "$(dirname "$0")/../shell/starship.toml" ]; then
+if [ -f "$(dirname "$0")/../../assets/shell/starship.toml" ]; then
     mkdir -p ~/.config
-    cp "$(dirname "$0")/../shell/starship.toml" ~/.config/starship.toml
+    cp "$(dirname "$0")/../../assets/shell/starship.toml" ~/.config/starship.toml
 fi
 
 echo

@@ -1,0 +1,277 @@
+{
+  "version": 1,
+  "description": "Central manifest for machine-setup modes, tasks, dependencies, and tools.",
+  "modes": [
+    {
+      "id": "recommended",
+      "label": "Automatic recommended setup",
+      "description": "Normal rebuild path for this machine.",
+      "tasks": [
+        "drivers.installRecovery",
+        "powershell.policy",
+        "winget.repair",
+        "git.install",
+        "apps.install",
+        "visualstudio.msvc",
+        "toolchains.install",
+        "windows.tweaks",
+        "windows.updates",
+        "vscode.extensions",
+        "git.config",
+        "shell.config"
+      ]
+    },
+    {
+      "id": "custom",
+      "label": "Custom setup checklist",
+      "description": "Choose individual setup tasks before running.",
+      "tasks": []
+    },
+    {
+      "id": "minimal",
+      "label": "Minimal recovery setup",
+      "description": "Enough to recover input, network, Git, winget, and MSVC.",
+      "tasks": [
+        "drivers.installRecovery",
+        "powershell.policy",
+        "winget.repair",
+        "git.install",
+        "visualstudio.msvc"
+      ]
+    },
+    {
+      "id": "apps",
+      "label": "Apps only",
+      "description": "Repair winget and install configured desktop apps.",
+      "tasks": [
+        "winget.repair",
+        "apps.install"
+      ]
+    },
+    {
+      "id": "dev",
+      "label": "Dev environment only",
+      "description": "Install developer toolchain pieces without general apps.",
+      "tasks": [
+        "powershell.policy",
+        "git.install",
+        "visualstudio.msvc",
+        "toolchains.install",
+        "vscode.extensions",
+        "git.config",
+        "shell.config",
+        "wsl.install"
+      ]
+    }
+  ],
+  "tasks": [
+    {
+      "id": "drivers.installRecovery",
+      "label": "Install recovery drivers",
+      "description": "Install exported Wi-Fi/touchpad recovery drivers when present.",
+      "type": "setup",
+      "path": "tasks/drivers/installRecovery.ps1",
+      "requiresAdmin": true,
+      "requiresNetwork": false,
+      "dependencies": [],
+      "rebootBehavior": "MayRequireManualReboot"
+    },
+    {
+      "id": "powershell.policy",
+      "label": "Set PowerShell execution policy",
+      "description": "Set CurrentUser execution policy to RemoteSigned.",
+      "type": "setup",
+      "path": "tasks/powershell/policy.ps1",
+      "requiresAdmin": false,
+      "requiresNetwork": false,
+      "dependencies": [],
+      "rebootBehavior": "None"
+    },
+    {
+      "id": "winget.repair",
+      "label": "Repair winget",
+      "description": "Repair App Installer and winget enough for package installs.",
+      "type": "setup",
+      "path": "tasks/winget/repair.ps1",
+      "requiresAdmin": true,
+      "requiresNetwork": false,
+      "dependencies": [],
+      "rebootBehavior": "None"
+    },
+    {
+      "id": "git.install",
+      "label": "Install Git",
+      "description": "Ensure Git for Windows is installed.",
+      "type": "setup",
+      "path": "tasks/git/install.ps1",
+      "requiresAdmin": true,
+      "requiresNetwork": false,
+      "dependencies": [],
+      "rebootBehavior": "None"
+    },
+    {
+      "id": "apps.install",
+      "label": "Install apps",
+      "description": "Install configured winget applications one by one.",
+      "type": "setup",
+      "path": "tasks/apps/install.ps1",
+      "requiresAdmin": true,
+      "requiresNetwork": true,
+      "dependencies": [
+        "winget.repair"
+      ],
+      "rebootBehavior": "MayRequireManualReboot"
+    },
+    {
+      "id": "visualstudio.msvc",
+      "label": "Install MSVC toolchain",
+      "description": "Install or modify Visual Studio for Desktop development with C++.",
+      "type": "setup",
+      "path": "tasks/visualstudio/msvc.ps1",
+      "requiresAdmin": true,
+      "requiresNetwork": false,
+      "dependencies": [],
+      "rebootBehavior": "MayRequireManualReboot"
+    },
+    {
+      "id": "toolchains.install",
+      "label": "Install developer toolchains",
+      "description": "Install fnm, Node/npm, Rust, Python/uv, Go, and Tauri when MSVC is available.",
+      "type": "setup",
+      "path": "tasks/toolchains/install.ps1",
+      "requiresAdmin": true,
+      "requiresNetwork": true,
+      "dependencies": [
+        "visualstudio.msvc"
+      ],
+      "rebootBehavior": "None"
+    },
+    {
+      "id": "windows.tweaks",
+      "label": "Apply Windows tweaks",
+      "description": "Apply Windows Explorer, theme, power, and startup tweaks.",
+      "type": "setup",
+      "path": "tasks/windows/tweaks.ps1",
+      "requiresAdmin": true,
+      "requiresNetwork": false,
+      "dependencies": [],
+      "rebootBehavior": "MayRequireManualReboot"
+    },
+    {
+      "id": "windows.updates",
+      "label": "Install Windows updates",
+      "description": "Install available Windows updates without automatic reboot.",
+      "type": "setup",
+      "path": "tasks/windows/updates.ps1",
+      "requiresAdmin": true,
+      "requiresNetwork": true,
+      "dependencies": [],
+      "rebootBehavior": "MayRequireManualReboot"
+    },
+    {
+      "id": "vscode.extensions",
+      "label": "Install VS Code extensions",
+      "description": "Install configured VS Code extensions.",
+      "type": "setup",
+      "path": "tasks/vscode/extensions.ps1",
+      "requiresAdmin": false,
+      "requiresNetwork": true,
+      "dependencies": [
+        "apps.install"
+      ],
+      "rebootBehavior": "None"
+    },
+    {
+      "id": "git.config",
+      "label": "Install Git config",
+      "description": "Copy Git config and global ignore templates.",
+      "type": "setup",
+      "path": "tasks/git/config.ps1",
+      "requiresAdmin": false,
+      "requiresNetwork": false,
+      "dependencies": [
+        "git.install"
+      ],
+      "rebootBehavior": "None"
+    },
+    {
+      "id": "shell.config",
+      "label": "Install shell config",
+      "description": "Copy PowerShell profile, Starship config, and Windows Terminal settings.",
+      "type": "setup",
+      "path": "tasks/powershell/shellConfig.ps1",
+      "requiresAdmin": false,
+      "requiresNetwork": false,
+      "dependencies": [
+        "powershell.policy"
+      ],
+      "rebootBehavior": "None"
+    },
+    {
+      "id": "wsl.install",
+      "label": "Install WSL",
+      "description": "Install and configure WSL/Ubuntu when selected.",
+      "type": "setup",
+      "path": "tasks/wsl/install.ps1",
+      "requiresAdmin": true,
+      "requiresNetwork": true,
+      "dependencies": [],
+      "rebootBehavior": "MayRequireManualReboot"
+    },
+    {
+      "id": "debloat.run",
+      "label": "Run debloat",
+      "description": "Optional removal of selected Windows bundled apps and ads.",
+      "type": "setup",
+      "path": "tasks/debloat/run.ps1",
+      "requiresAdmin": true,
+      "requiresNetwork": false,
+      "dependencies": [],
+      "rebootBehavior": "MayRequireManualReboot"
+    }
+  ],
+  "tools": [
+    {
+      "id": "drivers.exportRecovery",
+      "label": "Export Wi-Fi/touchpad recovery drivers",
+      "description": "Export selected recovery drivers from the current Windows install.",
+      "path": "tools/drivers/exportRecovery.ps1"
+    },
+    {
+      "id": "cache.offlineInstallers",
+      "label": "Cache offline recovery installers",
+      "description": "Download App Installer and Visual Studio bootstrappers for offline recovery.",
+      "path": "tools/cache/offlineInstallers.ps1"
+    },
+    {
+      "id": "recoveryUsb.prepare",
+      "label": "Prepare/update recovery USB",
+      "description": "Copy repo, drivers, installers, launchers, and docs to a recovery USB.",
+      "path": "tools/recovery-usb/prepare.ps1"
+    },
+    {
+      "id": "recoveryUsb.validate",
+      "label": "Validate recovery USB",
+      "description": "Validate required recovery USB files.",
+      "path": "tools/recovery-usb/validate.ps1"
+    },
+    {
+      "id": "slipstream.rebuildUsb",
+      "label": "Rebuild/slipstream Windows install USB",
+      "description": "Guided Windows install USB rebuild workflow.",
+      "path": "tools/slipstream/rebuildUsb.ps1"
+    },
+    {
+      "id": "diagnostics.run",
+      "label": "Diagnostics",
+      "description": "Show setup diagnostics and environment checks.",
+      "path": "tools/diagnostics/run.ps1"
+    },
+    {
+      "id": "instructions.read",
+      "label": "Read instructions",
+      "description": "Open local recovery and setup instructions.",
+      "path": "tools/diagnostics/readInstructions.ps1"
+    }
+  ]
+}
