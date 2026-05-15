@@ -358,6 +358,15 @@ try {
         }
     } }
     $Steps += [pscustomobject]@{ Key = 'dotfiles'; Heading = 'Dotfiles'; Action = {
+
+        # Allow normal PowerShell dev-tool shims like npm.ps1 to run after setup.
+        try {
+            Set-ExecutionPolicy -Scope CurrentUser -ExecutionPolicy RemoteSigned -Force
+            Write-Host "PowerShell CurrentUser execution policy set to RemoteSigned." -ForegroundColor Green
+        } catch {
+            Write-Warning "Could not set CurrentUser execution policy: $($_.Exception.Message)"
+        }
+        
         # PowerShell profile
         $profileDir = Split-Path -Parent $PROFILE
         if (-not (Test-Path $profileDir)) { New-Item -ItemType Directory -Path $profileDir -Force | Out-Null }
