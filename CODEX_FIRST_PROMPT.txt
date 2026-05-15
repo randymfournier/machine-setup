@@ -1,0 +1,14 @@
+Read CODEX_TASK.md first.
+
+Inspect the current repo.
+
+Do not edit files yet.
+
+Return:
+1. What the repo currently does.
+2. Which existing files contain useful logic to preserve.
+3. Which files should remain launchers.
+4. Which files should become tasks/tools.
+5. A phase-by-phase implementation plan.
+
+Do not start coding until I approve the plan.
