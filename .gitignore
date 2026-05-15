@@ -27,3 +27,17 @@ desktop.ini
 # Generated installer/bootstrap logs
 logs/
 *.log
+
+# Local exported driver packages can be large and machine-specific.
+drivers/exported-*/
+drivers/exported-selected-*/
+
+# Optional offline recovery assets; keep them on USB/local disk, not GitHub.
+installers/*.exe
+installers/*.msixbundle
+
+# Local USB staging/export output
+usb-staging/
+*.iso
+*.wim
+*.esd

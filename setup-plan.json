@@ -1,0 +1,94 @@
+{
+  "version": 1,
+  "description": "Step plan consumed by setup-wizard.ps1. bootstrap.ps1 remains the step runner.",
+  "steps": [
+    {
+      "Key": "drivers",
+      "Heading": "Local Wi-Fi/touchpad recovery drivers",
+      "Recommended": true,
+      "Minimal": true,
+      "Dev": false,
+      "Apps": false
+    },
+    {
+      "Key": "windows",
+      "Heading": "Windows tweaks",
+      "Recommended": true,
+      "Minimal": false,
+      "Dev": false,
+      "Apps": false
+    },
+    {
+      "Key": "updates",
+      "Heading": "Windows updates (no automatic reboot)",
+      "Recommended": true,
+      "Minimal": false,
+      "Dev": false,
+      "Apps": false
+    },
+    {
+      "Key": "winget-repair",
+      "Heading": "winget health / repair",
+      "Recommended": true,
+      "Minimal": true,
+      "Dev": false,
+      "Apps": true
+    },
+    {
+      "Key": "winget",
+      "Heading": "winget apps",
+      "Recommended": true,
+      "Minimal": false,
+      "Dev": false,
+      "Apps": true
+    },
+    {
+      "Key": "visualstudio",
+      "Heading": "Visual Studio C++ workload / MSVC linker",
+      "Recommended": true,
+      "Minimal": true,
+      "Dev": true,
+      "Apps": false
+    },
+    {
+      "Key": "toolchains",
+      "Heading": "Dev toolchains",
+      "Recommended": true,
+      "Minimal": false,
+      "Dev": true,
+      "Apps": false
+    },
+    {
+      "Key": "vscode",
+      "Heading": "VS Code extensions",
+      "Recommended": true,
+      "Minimal": false,
+      "Dev": true,
+      "Apps": false
+    },
+    {
+      "Key": "dotfiles",
+      "Heading": "Dotfiles / PowerShell profile",
+      "Recommended": true,
+      "Minimal": false,
+      "Dev": true,
+      "Apps": false
+    },
+    {
+      "Key": "wsl",
+      "Heading": "WSL2",
+      "Recommended": true,
+      "Minimal": false,
+      "Dev": true,
+      "Apps": false
+    },
+    {
+      "Key": "debloat",
+      "Heading": "Debloat optional Windows apps",
+      "Recommended": false,
+      "Minimal": false,
+      "Dev": false,
+      "Apps": false
+    }
+  ]
+}

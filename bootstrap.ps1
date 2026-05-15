@@ -8,7 +8,10 @@
 # Skip steps with -Skip (use the lowercase keys below):
 #   .\bootstrap.ps1 -Skip windows,updates,wsl,dotfiles
 #
-# Available skip keys:
+# Run only selected steps with -Only:
+#   .\bootstrap.ps1 -Only winget-repair,visualstudio
+#
+# Available step keys:
 #   drivers        -- local Wi-Fi/touchpad recovery driver install, if exported drivers are present
 #   windows        -- Windows tweaks (taskbar alignment, dark mode, perf)
 #   debloat        -- only runs when -IncludeDebloat is also passed
@@ -27,12 +30,15 @@
 [CmdletBinding()]
 param(
     [string[]]$Skip = @(),
+    [string[]]$Only = @(),
     [switch]$IncludeDebloat
 )
 
 $ErrorActionPreference = 'Continue'
+try { [Console]::OutputEncoding = [System.Text.Encoding]::UTF8 } catch { }
 $RepoRoot = $PSScriptRoot
 $SkipKeys = @($Skip | ForEach-Object { $_.ToLowerInvariant() })
+$OnlyKeys = @($Only | ForEach-Object { $_.ToLowerInvariant() })
 
 # --- Must be admin ---------------------------------------------------------
 if (-NOT ([Security.Principal.WindowsPrincipal][Security.Principal.WindowsIdentity]::GetCurrent()).IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator)) {
@@ -68,20 +74,96 @@ function Write-SetupHeader([string]$heading) {
     Write-Host "========================================" -ForegroundColor Green
 }
 
+function Get-SafeOutputLines {
+    param(
+        [AllowNull()][object[]]$Lines,
+        [int]$Tail = 40
+    )
+
+    if (-not $Lines) { return @() }
+
+    $clean = @(
+        foreach ($rawLine in $Lines) {
+            $line = [string]$rawLine
+            # Normalize progress carriage returns and remove common spinner-only lines.
+            $line = $line -replace "`r", ''
+            $line = $line.TrimEnd()
+            if ([string]::IsNullOrWhiteSpace($line)) { continue }
+            if ($line -match '^[\\|/\-]+$') { continue }
+            $line
+        }
+    )
+
+    if ($clean.Count -gt $Tail) {
+        return @($clean | Select-Object -Last $Tail)
+    }
+
+    return $clean
+}
+
 function Invoke-LoggedNativeCommand {
     param(
         [Parameter(Mandatory=$true)][string]$FilePath,
         [Parameter(Mandatory=$true)][string[]]$Arguments,
-        [switch]$ThrowOnFailure
+        [switch]$ThrowOnFailure,
+        [int]$TimeoutSeconds = 0,
+        [string]$Activity = '',
+        [switch]$QuietOutput
     )
 
-    Write-Host ("> {0} {1}" -f $FilePath, ($Arguments -join ' ')) -ForegroundColor DarkGray
-    $output = & $FilePath @Arguments 2>&1
-    $exitCode = $LASTEXITCODE
+    if (-not $Activity) { $Activity = $FilePath }
 
-    if ($output) {
-        $output | ForEach-Object { Write-Host "  $_" -ForegroundColor DarkGray }
+    Write-Host ("> {0} {1}" -f $FilePath, ($Arguments -join ' ')) -ForegroundColor DarkGray
+
+    $tempBase = Join-Path $env:TEMP ("machine-setup-native-{0}" -f ([guid]::NewGuid().ToString('N')))
+    $stdoutPath = "$tempBase.out.log"
+    $stderrPath = "$tempBase.err.log"
+    $exitCode = $null
+    $timedOut = $false
+
+    try {
+        $process = Start-Process -FilePath $FilePath -ArgumentList $Arguments -RedirectStandardOutput $stdoutPath -RedirectStandardError $stderrPath -NoNewWindow -PassThru
+        $sw = [System.Diagnostics.Stopwatch]::StartNew()
+        $heartbeatSeconds = 15
+
+        while (-not $process.HasExited) {
+            Start-Sleep -Seconds $heartbeatSeconds
+            try { $process.Refresh() } catch { }
+
+            $elapsed = [math]::Round($sw.Elapsed.TotalSeconds)
+            Write-Host ("  [{0:mm\:ss}] {1} still running..." -f $sw.Elapsed, $Activity) -ForegroundColor DarkGray
+
+            if ($TimeoutSeconds -gt 0 -and $elapsed -ge $TimeoutSeconds) {
+                $timedOut = $true
+                Write-Warning "$Activity timed out after $TimeoutSeconds seconds. Stopping it and continuing."
+                try { $process.Kill() } catch { }
+                break
+            }
+        }
+
+        if (-not $timedOut) {
+            $exitCode = $process.ExitCode
+        } else {
+            $exitCode = 124
+        }
+    } catch {
+        if ($ThrowOnFailure) { throw }
+        $exitCode = 1
+        Set-Content -Path $stderrPath -Value $_.Exception.Message -Encoding UTF8 -ErrorAction SilentlyContinue
     }
+
+    $stdout = @()
+    $stderr = @()
+    if (Test-Path $stdoutPath) { $stdout = @(Get-Content -Path $stdoutPath -ErrorAction SilentlyContinue) }
+    if (Test-Path $stderrPath) { $stderr = @(Get-Content -Path $stderrPath -ErrorAction SilentlyContinue) }
+    $output = @($stdout + $stderr)
+    $safeOutput = @(Get-SafeOutputLines -Lines $output -Tail 60)
+
+    if (-not $QuietOutput -and $safeOutput.Count -gt 0) {
+        $safeOutput | ForEach-Object { Write-Host "  $_" -ForegroundColor DarkGray }
+    }
+
+    Remove-Item -Path $stdoutPath, $stderrPath -Force -ErrorAction SilentlyContinue
 
     if ($exitCode -ne 0 -and $ThrowOnFailure) {
         throw "$FilePath failed with exit code $exitCode."
@@ -89,7 +171,8 @@ function Invoke-LoggedNativeCommand {
 
     return [pscustomobject]@{
         ExitCode = $exitCode
-        Output = @($output)
+        Output = @($safeOutput)
+        TimedOut = $timedOut
     }
 }
 
@@ -127,18 +210,49 @@ function Test-WingetSourceHealthy {
     return ($joined -match "(?im)^\s*$([regex]::Escape($SourceName))\s")
 }
 
-function Repair-Winget {
-    Write-Host "Repairing App Installer / winget sources..." -ForegroundColor Cyan
-    Write-Host "This step is best-effort. If source reset still fails, package installs will continue package-by-package." -ForegroundColor DarkGray
+function Test-PendingReboot {
+    $markers = @(
+        'HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\Component Based Servicing\RebootPending',
+        'HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\WindowsUpdate\Auto Update\RebootRequired'
+    )
 
-    $bundlePath = Join-Path $env:TEMP 'winget.msixbundle'
+    foreach ($marker in $markers) {
+        try {
+            if (Test-Path $marker) { return $true }
+        } catch { }
+    }
 
     try {
-        Invoke-WebRequest -Uri 'https://aka.ms/getwinget' -OutFile $bundlePath -UseBasicParsing
-        Add-AppxPackage -Path $bundlePath -ForceApplicationShutdown
+        $pendingRename = (Get-ItemProperty -Path 'HKLM:\SYSTEM\CurrentControlSet\Control\Session Manager' -Name PendingFileRenameOperations -ErrorAction SilentlyContinue).PendingFileRenameOperations
+        if ($pendingRename) { return $true }
+    } catch { }
+
+    return $false
+}
+
+function Repair-Winget {
+    Write-Host "Repairing App Installer / winget sources..." -ForegroundColor Cyan
+    Write-Host "This step is best-effort. It will not block the rest of setup if Microsoft's source metadata hangs." -ForegroundColor DarkGray
+
+    $bundlePath = Join-Path $env:TEMP 'winget.msixbundle'
+    $localBundle = Join-Path $RepoRoot 'installers\winget.msixbundle'
+
+    try {
+        if (Test-Path $localBundle) {
+            Write-Host "Using local App Installer bundle: $localBundle" -ForegroundColor Green
+            $bundlePath = $localBundle
+        } else {
+            $oldProgress = $ProgressPreference
+            $ProgressPreference = 'SilentlyContinue'
+            Invoke-WebRequest -Uri 'https://aka.ms/getwinget' -OutFile $bundlePath -UseBasicParsing -ErrorAction Stop
+        }
+
+        Add-AppxPackage -Path $bundlePath -ForceApplicationShutdown -ErrorAction Stop
         Write-Host "App Installer package applied from $bundlePath" -ForegroundColor Green
     } catch {
-        Write-Warning "App Installer repair failed or was already current: $($_.Exception.Message)"
+        Write-Warning "App Installer repair download/apply did not complete: $($_.Exception.Message)"
+    } finally {
+        if ($null -ne $oldProgress) { $ProgressPreference = $oldProgress }
     }
 
     Refresh-Path
@@ -147,21 +261,22 @@ function Repair-Winget {
         throw 'winget is still not available after App Installer repair.'
     }
 
-    $reset = Invoke-LoggedNativeCommand -FilePath 'winget' -Arguments @('source','reset','--force')
+    $reset = Invoke-LoggedNativeCommand -FilePath 'winget' -Arguments @('source','reset','--force') -TimeoutSeconds 90 -Activity 'winget source reset' -QuietOutput
     if ($reset.ExitCode -ne 0) {
         Write-Warning "winget source reset --force failed with exit code $($reset.ExitCode). Continuing anyway."
+        if ($reset.Output.Count -gt 0) { $reset.Output | Select-Object -Last 8 | ForEach-Object { Write-Host "  $_" -ForegroundColor DarkYellow } }
+    } else {
+        Write-Host 'winget source reset completed.' -ForegroundColor Green
     }
 
-    $update = Invoke-LoggedNativeCommand -FilePath 'winget' -Arguments @('source','update')
-    if ($update.ExitCode -ne 0) {
-        Write-Warning "winget source update failed with exit code $($update.ExitCode). Continuing anyway."
-    }
+    # Do NOT run 'winget source update' here. On fresh installs it can hang forever
+    # on the winget source spinner. Package installs will refresh/check each source as needed.
 
     if (-not (Test-WingetHealthy)) {
         throw 'winget command still does not appear healthy after repair.'
     }
 
-    Write-Host 'winget command is available. Individual sources will be tested during package installs.' -ForegroundColor Green
+    Write-Host 'winget command is available. Package installs will run individually with timeouts.' -ForegroundColor Green
 }
 
 function Install-WingetPackagesFromManifest {
@@ -209,7 +324,7 @@ function Install-WingetPackagesFromManifest {
                 '--disable-interactivity'
             )
 
-            $result = Invoke-LoggedNativeCommand -FilePath 'winget' -Arguments $args
+            $result = Invoke-LoggedNativeCommand -FilePath 'winget' -Arguments $args -TimeoutSeconds 900 -Activity "winget install $id" -QuietOutput
 
             if ($result.ExitCode -eq 0) {
                 $installed++
@@ -222,6 +337,9 @@ function Install-WingetPackagesFromManifest {
                 } else {
                     $failures.Add("$id :: winget exit code $($result.ExitCode)") | Out-Null
                     Write-Host "[FAILED] $id" -ForegroundColor Red
+                    if ($result.Output.Count -gt 0) {
+                        $result.Output | Select-Object -Last 10 | ForEach-Object { Write-Host "  $_" -ForegroundColor DarkYellow }
+                    }
                     Write-Host "  Continuing with next package." -ForegroundColor DarkYellow
                 }
             }
@@ -323,7 +441,7 @@ try {
     } }
     $Steps += [pscustomobject]@{ Key = 'windows'; Heading = 'Windows tweaks'; Action = { & (Join-Path $RepoRoot 'windows\apply-tweaks.ps1') } }
 
-    if ($IncludeDebloat) {
+    if ($IncludeDebloat -or ('debloat' -in $OnlyKeys)) {
         $Steps += [pscustomobject]@{ Key = 'debloat'; Heading = 'Debloat'; Action = {
             $debloatScript = Join-Path $RepoRoot 'windows\debloat.ps1'
             if (-not (Test-Path $debloatScript)) {
@@ -336,17 +454,17 @@ try {
         } }
     }
 
-    $Steps += [pscustomobject]@{ Key = 'updates'; Heading = 'Windows updates'; Action = { & (Join-Path $RepoRoot 'windows\update-windows.ps1') } }
+    $Steps += [pscustomobject]@{ Key = 'updates'; Heading = 'Windows updates (no automatic reboot)'; Action = { & (Join-Path $RepoRoot 'windows\update-windows.ps1') } }
     $Steps += [pscustomobject]@{ Key = 'winget-repair'; Heading = 'winget health / repair'; Action = {
         if (Test-WingetHealthy) {
-            Write-Host 'winget command is available. Running source repair/check anyway because fresh installs can have broken source metadata.' -ForegroundColor DarkGray
+            Write-Host 'winget command is available. Running quick source reset only; skipping source update to avoid fresh-install hangs.' -ForegroundColor DarkGray
         }
         Repair-Winget
     } }
-    $Steps += [pscustomobject]@{ Key = 'visualstudio'; Heading = 'Visual Studio C++ workload / MSVC linker'; Action = { & (Join-Path $RepoRoot 'dev\install-visualstudio-native-desktop.ps1') } }
     $Steps += [pscustomobject]@{ Key = 'winget'; Heading = 'winget packages'; Action = {
         Install-WingetPackagesFromManifest -ManifestPath (Join-Path $RepoRoot 'winget-packages.json')
     } }
+    $Steps += [pscustomobject]@{ Key = 'visualstudio'; Heading = 'Visual Studio C++ workload / MSVC linker'; Action = { & (Join-Path $RepoRoot 'dev\install-visualstudio-native-desktop.ps1') } }
     $Steps += [pscustomobject]@{ Key = 'toolchains'; Heading = 'Dev toolchains'; Action = { & (Join-Path $RepoRoot 'dev\install-toolchains.ps1') } }
     $Steps += [pscustomobject]@{ Key = 'vscode'; Heading = 'VS Code extensions'; Action = {
         if (Get-Command code -ErrorAction SilentlyContinue) {
@@ -358,7 +476,6 @@ try {
         }
     } }
     $Steps += [pscustomobject]@{ Key = 'dotfiles'; Heading = 'Dotfiles'; Action = {
-
         # Allow normal PowerShell dev-tool shims like npm.ps1 to run after setup.
         try {
             Set-ExecutionPolicy -Scope CurrentUser -ExecutionPolicy RemoteSigned -Force
@@ -366,7 +483,7 @@ try {
         } catch {
             Write-Warning "Could not set CurrentUser execution policy: $($_.Exception.Message)"
         }
-        
+
         # PowerShell profile
         $profileDir = Split-Path -Parent $PROFILE
         if (-not (Test-Path $profileDir)) { New-Item -ItemType Directory -Path $profileDir -Force | Out-Null }
@@ -389,6 +506,15 @@ try {
         Write-Host "Remember to edit $env:USERPROFILE\.gitconfig with your name/email." -ForegroundColor Yellow
     } }
     $Steps += [pscustomobject]@{ Key = 'wsl'; Heading = 'WSL2'; Action = { & (Join-Path $RepoRoot 'wsl\setup-wsl.ps1') } }
+
+    if ($OnlyKeys.Count -gt 0) {
+        $requestedOnly = @($OnlyKeys)
+        $Steps = @($Steps | Where-Object { $_.Key.ToLowerInvariant() -in $requestedOnly })
+
+        if ($Steps.Count -eq 0) {
+            throw "No matching bootstrap steps found for -Only: $($requestedOnly -join ', ')"
+        }
+    }
 
     foreach ($step in $Steps) {
         Invoke-SetupStep -Key $step.Key -Heading $step.Heading -Action $step.Action -TotalSteps $Steps.Count
@@ -430,6 +556,12 @@ try {
     Write-Host "  Full log:     $LogPath"
     Write-Host "  JSON summary: $SummaryPath"
 
+    if (Test-PendingReboot) {
+        Write-Host ""
+        Write-Host "REBOOT PENDING: Windows is asking for a restart, but setup did not restart automatically." -ForegroundColor Yellow
+        Write-Host "Finish reviewing this summary first, then reboot manually when you choose." -ForegroundColor Yellow
+    }
+
     Write-Host @"
 
 NEXT STEPS:
@@ -440,7 +572,7 @@ NEXT STEPS:
   4. Manual stuff          -> see manual-steps.md (M365, drivers, taskbar extras, etc.)
   5. Modding tools         -> see modding\ue4ss-icarus.md (only if you need it)
 
-If WSL or Windows Updates were installed, REBOOT before using them heavily.
+If WSL or Windows Updates were installed, reboot manually after reviewing this summary.
 "@ -ForegroundColor Cyan
 
     if ($failed.Count -gt 0) {

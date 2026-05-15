@@ -2,6 +2,17 @@
 
 After your *first* recovery (where you have to download all updates after install — that's what `windows/update-windows.ps1` is for), build a fresh USB with current cumulative updates already integrated. Saves 30–60 min on every future recovery.
 
+## How to open these instructions later
+
+You do not have to remember where this file is. Open the setup tool and choose:
+
+```text
+Toolkit / recovery USB utilities
+→ Read slipstream/rebuild boot USB instructions
+```
+
+That is the intended path when this process has been sitting for months and the exact steps are fuzzy.
+
 ## Tool: UUP Dump
 
 UUP Dump pulls Microsoft's own Update Catalog files directly and bakes them into a fresh ISO. It's the modern, no-shenanigans way to do this.

@@ -9,8 +9,9 @@
 #   D:\Start-MachineSetup.cmd
 #
 # This script does not need Git or winget. It installs saved local drivers,
-# copies this repo to C:\machine-setup, then launches bootstrap.ps1 with
-# -NoProfile and -ExecutionPolicy Bypass.
+# copies this repo to C:\machine-setup, then launches setup-wizard.ps1 with
+# -NoProfile and -ExecutionPolicy Bypass. If the wizard is missing, it falls
+# back to bootstrap.ps1.
 
 $ErrorActionPreference = 'Stop'
 
@@ -72,8 +73,23 @@ try {
     Write-Warning "Could not unblock all repo files: $($_.Exception.Message)"
 }
 
-Write-Host "`nLaunching bootstrap.ps1 with -NoProfile and -ExecutionPolicy Bypass...`n" -ForegroundColor Green
-& powershell.exe -NoLogo -NoProfile -ExecutionPolicy Bypass -File "$RepoPath\bootstrap.ps1"
+$wizardPath = Join-Path $RepoPath 'setup-wizard.ps1'
+$bootstrapPath = Join-Path $RepoPath 'bootstrap.ps1'
+
+if (Test-Path $wizardPath) {
+    Write-Host "`nLaunching setup-wizard.ps1 with -NoProfile and -ExecutionPolicy Bypass...`n" -ForegroundColor Green
+    & powershell.exe -NoLogo -NoProfile -ExecutionPolicy Bypass -File $wizardPath
+    $setupExit = $LASTEXITCODE
+
+    if ($setupExit -ne 0) {
+        Write-Warning "setup-wizard.ps1 finished with exit code $setupExit. Check C:\machine-setup\logs for details."
+    }
+
+    exit $setupExit
+}
+
+Write-Warning "setup-wizard.ps1 was not found. Falling back to bootstrap.ps1."
+& powershell.exe -NoLogo -NoProfile -ExecutionPolicy Bypass -File $bootstrapPath
 $bootstrapExit = $LASTEXITCODE
 
 if ($bootstrapExit -ne 0) {

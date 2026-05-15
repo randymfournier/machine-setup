@@ -10,9 +10,10 @@
 #   3. Repair/check winget/App Installer enough to install Git
 #   4. Make sure Git is available
 #   5. Clone/update the repo to C:\machine-setup
-#   6. Launch bootstrap.ps1 in a no-profile, bypassed child PowerShell process
+#   6. Launch setup-wizard.ps1 in a no-profile, bypassed child PowerShell process
 
 $ErrorActionPreference = 'Stop'
+try { [Console]::OutputEncoding = [System.Text.Encoding]::UTF8 } catch { }
 
 # --- Must be admin ---------------------------------------------------------
 if (-NOT ([Security.Principal.WindowsPrincipal][Security.Principal.WindowsIdentity]::GetCurrent()).IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator)) {
@@ -36,6 +37,42 @@ function Refresh-Path {
     $machinePath = [System.Environment]::GetEnvironmentVariable('Path','Machine')
     $userPath = [System.Environment]::GetEnvironmentVariable('Path','User')
     $env:Path = @($machinePath, $userPath) -join ';'
+}
+
+function Invoke-NativeBestEffort {
+    param(
+        [Parameter(Mandatory=$true)][string]$FilePath,
+        [Parameter(Mandatory=$true)][string[]]$Arguments,
+        [int]$TimeoutSeconds = 120,
+        [string]$Activity = ''
+    )
+
+    if (-not $Activity) { $Activity = $FilePath }
+    Write-Host ("> {0} {1}" -f $FilePath, ($Arguments -join ' ')) -ForegroundColor DarkGray
+
+    $out = Join-Path $env:TEMP ("machine-setup-quickstart-{0}.out" -f ([guid]::NewGuid().ToString('N')))
+    $err = Join-Path $env:TEMP ("machine-setup-quickstart-{0}.err" -f ([guid]::NewGuid().ToString('N')))
+
+    try {
+        $p = Start-Process -FilePath $FilePath -ArgumentList $Arguments -RedirectStandardOutput $out -RedirectStandardError $err -NoNewWindow -PassThru
+        $sw = [System.Diagnostics.Stopwatch]::StartNew()
+        while (-not $p.HasExited) {
+            Start-Sleep -Seconds 10
+            try { $p.Refresh() } catch { }
+            Write-Host ("  [{0:mm\:ss}] {1} still running..." -f $sw.Elapsed, $Activity) -ForegroundColor DarkGray
+            if ($sw.Elapsed.TotalSeconds -ge $TimeoutSeconds) {
+                Write-Warning "$Activity timed out after $TimeoutSeconds seconds. Stopping it and continuing."
+                try { $p.Kill() } catch { }
+                return 124
+            }
+        }
+        return $p.ExitCode
+    } catch {
+        Write-Warning "$Activity failed to start/run: $($_.Exception.Message)"
+        return 1
+    } finally {
+        Remove-Item -Path $out,$err -Force -ErrorAction SilentlyContinue
+    }
 }
 
 function Test-DriverFolder {
@@ -123,30 +160,58 @@ function Test-WingetHealthy {
     return $true
 }
 
+function Find-LocalInstallerFile {
+    param([Parameter(Mandatory=$true)][string]$FileName)
+
+    $drives = Get-PSDrive -PSProvider FileSystem -ErrorAction SilentlyContinue |
+        Where-Object { $_.Root -and (Test-Path $_.Root) }
+
+    foreach ($drive in $drives) {
+        $root = $drive.Root.TrimEnd('\')
+        foreach ($candidate in @(
+            "$root\machine-setup\installers\$FileName",
+            "$root\installers\$FileName",
+            "$root\machine-setup-offline\installers\$FileName",
+            "$root\$FileName"
+        )) {
+            if (Test-Path $candidate) { return $candidate }
+        }
+    }
+
+    return $null
+}
+
 function Repair-Winget {
     Write-Host "Repairing App Installer / winget before installing Git..." -ForegroundColor Cyan
-    Write-Host "This is best-effort. If source reset fails, Git install will still be attempted." -ForegroundColor DarkGray
+    Write-Host "This is best-effort. It skips winget source update because that can hang on fresh installs." -ForegroundColor DarkGray
 
     $bundlePath = Join-Path $env:TEMP 'winget.msixbundle'
+    $localBundle = Find-LocalInstallerFile -FileName 'winget.msixbundle'
 
     try {
-        Invoke-WebRequest -Uri 'https://aka.ms/getwinget' -OutFile $bundlePath -UseBasicParsing
-        Add-AppxPackage -Path $bundlePath -ForceApplicationShutdown
+        if ($localBundle) {
+            Write-Host "Using local App Installer bundle: $localBundle" -ForegroundColor Green
+            $bundlePath = $localBundle
+        } else {
+            $oldProgress = $ProgressPreference
+            $ProgressPreference = 'SilentlyContinue'
+            Invoke-WebRequest -Uri 'https://aka.ms/getwinget' -OutFile $bundlePath -UseBasicParsing -ErrorAction Stop
+        }
+
+        Add-AppxPackage -Path $bundlePath -ForceApplicationShutdown -ErrorAction Stop
+        Write-Host "App Installer package applied from $bundlePath" -ForegroundColor Green
     } catch {
-        Write-Warning "App Installer repair failed or was already current: $($_.Exception.Message)"
+        Write-Warning "App Installer repair download/apply did not complete: $($_.Exception.Message)"
+    } finally {
+        if ($null -ne $oldProgress) { $ProgressPreference = $oldProgress }
     }
 
     Refresh-Path
 
     if (Get-Command winget -ErrorAction SilentlyContinue) {
-        & winget source reset --force
-        if ($LASTEXITCODE -ne 0) {
-            Write-Warning "winget source reset --force failed with exit code $LASTEXITCODE. Continuing anyway."
-        }
-
-        & winget source update
-        if ($LASTEXITCODE -ne 0) {
-            Write-Warning "winget source update returned exit code $LASTEXITCODE. Continuing anyway."
+        $exit = Invoke-NativeBestEffort -FilePath 'winget' -Arguments @('source','reset','--force') -TimeoutSeconds 90 -Activity 'winget source reset'
+        if ($exit -ne 0) {
+            Write-Warning "winget source reset --force returned exit code $exit. Continuing anyway."
         }
     }
 
@@ -172,9 +237,9 @@ if (-not (Test-WingetHealthy)) {
 # --- Ensure git is installed -----------------------------------------------
 if (-not (Get-Command git -ErrorAction SilentlyContinue)) {
     Write-Host "Installing Git via winget..." -ForegroundColor Cyan
-    & winget install --id Git.Git -e --source winget --accept-package-agreements --accept-source-agreements
-    if ($LASTEXITCODE -ne 0) {
-        throw "Git install failed with exit code $LASTEXITCODE. If winget source repair is still broken, install Git for Windows manually or use the USB local quickstart, then re-run quickstart."
+    $gitExit = Invoke-NativeBestEffort -FilePath 'winget' -Arguments @('install','--id','Git.Git','-e','--source','winget','--accept-package-agreements','--accept-source-agreements','--disable-interactivity') -TimeoutSeconds 900 -Activity 'winget install Git'
+    if ($gitExit -ne 0) {
+        throw "Git install failed with exit code $gitExit. If winget source repair is still broken, install Git for Windows manually or use the USB local quickstart, then re-run quickstart."
     }
 
     Refresh-Path
@@ -199,16 +264,31 @@ if (Test-Path $RepoPath) {
     }
 }
 
-# Belt-and-suspenders: unblock repo files and launch bootstrap without loading a profile.
+# Belt-and-suspenders: unblock repo files and launch setup without loading a profile.
 try {
     Get-ChildItem -Path $RepoPath -Recurse -File | Unblock-File -ErrorAction SilentlyContinue
 } catch {
     Write-Warning "Could not unblock all repo files: $($_.Exception.Message)"
 }
 
-# --- Hand off to bootstrap -------------------------------------------------
-Write-Host "`nLaunching bootstrap.ps1 with -NoProfile and -ExecutionPolicy Bypass...`n" -ForegroundColor Green
-& powershell.exe -NoLogo -NoProfile -ExecutionPolicy Bypass -File "$RepoPath\bootstrap.ps1"
+# --- Hand off to setup wizard ---------------------------------------------
+$wizardPath = Join-Path $RepoPath 'setup-wizard.ps1'
+$bootstrapPath = Join-Path $RepoPath 'bootstrap.ps1'
+
+if (Test-Path $wizardPath) {
+    Write-Host "`nLaunching setup-wizard.ps1 with -NoProfile and -ExecutionPolicy Bypass...`n" -ForegroundColor Green
+    & powershell.exe -NoLogo -NoProfile -ExecutionPolicy Bypass -File $wizardPath
+    $setupExit = $LASTEXITCODE
+
+    if ($setupExit -ne 0) {
+        Write-Warning "setup-wizard.ps1 finished with exit code $setupExit. Check C:\machine-setup\logs for details."
+    }
+
+    exit $setupExit
+}
+
+Write-Warning "setup-wizard.ps1 was not found. Falling back to bootstrap.ps1."
+& powershell.exe -NoLogo -NoProfile -ExecutionPolicy Bypass -File $bootstrapPath
 $bootstrapExit = $LASTEXITCODE
 
 if ($bootstrapExit -ne 0) {

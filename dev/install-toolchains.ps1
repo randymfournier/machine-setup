@@ -8,6 +8,7 @@
 #   - ScreenRec note (manual download, not on winget)
 
 $ErrorActionPreference = 'Stop'
+try { [Console]::OutputEncoding = [System.Text.Encoding]::UTF8 } catch { }
 $tmp = "$env:TEMP\machine-setup-installs"
 New-Item -ItemType Directory -Path $tmp -Force | Out-Null
 
@@ -75,7 +76,7 @@ function Invoke-ToolStep {
 Invoke-ToolStep 'fnm / Node LTS' {
     if (-not (Has fnm)) {
         Write-Host 'Installing fnm...' -ForegroundColor Cyan
-        & winget install --id Schniz.fnm -e --accept-package-agreements --accept-source-agreements
+        & winget install --id Schniz.fnm -e --accept-package-agreements --accept-source-agreements --disable-interactivity
         if ($LASTEXITCODE -ne 0) { throw "winget install Schniz.fnm failed with exit code $LASTEXITCODE." }
         Refresh-Path
     } else {
@@ -113,7 +114,7 @@ Invoke-ToolStep 'rustup / Rust stable' {
     if (-not (Has rustup)) {
         Write-Host 'Installing rustup...' -ForegroundColor Cyan
         $rustupExe = "$tmp\rustup-init.exe"
-        Invoke-WebRequest -Uri 'https://win.rustup.rs/x86_64' -OutFile $rustupExe -UseBasicParsing
+        $oldProgress = $ProgressPreference; $ProgressPreference = 'SilentlyContinue'; try { Invoke-WebRequest -Uri 'https://win.rustup.rs/x86_64' -OutFile $rustupExe -UseBasicParsing } finally { $ProgressPreference = $oldProgress }
         & $rustupExe -y --default-toolchain stable
         if ($LASTEXITCODE -ne 0) { throw "rustup-init failed with exit code $LASTEXITCODE." }
         Refresh-Path
@@ -127,6 +128,32 @@ Invoke-ToolStep 'rustup / Rust stable' {
     }
 }
 
+function Find-VsDevCmd {
+    $vsInstallerDir = Join-Path ${env:ProgramFiles(x86)} 'Microsoft Visual Studio\Installer'
+    $vswhere = Join-Path $vsInstallerDir 'vswhere.exe'
+    $paths = @()
+
+    if (Test-Path $vswhere) {
+        $raw = & $vswhere -products * -requires Microsoft.VisualStudio.Component.VC.Tools.x86.x64 -property installationPath 2>$null
+        if ($raw) { $paths += @($raw) }
+    }
+
+    $paths += @(
+        (Join-Path ${env:ProgramFiles} 'Microsoft Visual Studio\2022\BuildTools'),
+        (Join-Path ${env:ProgramFiles} 'Microsoft Visual Studio\2022\Community'),
+        (Join-Path ${env:ProgramFiles(x86)} 'Microsoft Visual Studio\2022\BuildTools'),
+        (Join-Path ${env:ProgramFiles(x86)} 'Microsoft Visual Studio\2022\Community')
+    )
+
+    foreach ($path in ($paths | Select-Object -Unique)) {
+        if (-not $path) { continue }
+        $candidate = Join-Path $path 'Common7\Tools\VsDevCmd.bat'
+        if (Test-Path $candidate) { return $candidate }
+    }
+
+    return $null
+}
+
 Invoke-ToolStep 'Tauri CLI' {
     if (-not (Has cargo)) {
         throw 'cargo is not available. Rust/rustup needs to succeed first.'
@@ -134,12 +161,29 @@ Invoke-ToolStep 'Tauri CLI' {
 
     $linker = Find-MsvcLinker
     if (-not $linker) {
-        throw 'MSVC link.exe was not found. Run or repair the visualstudio bootstrap step before installing tauri-cli.'
+        Write-Host 'Skipping Tauri CLI for now: MSVC link.exe is not available yet.' -ForegroundColor Yellow
+        Write-Host 'Fix/re-run the Visual Studio step, then re-run bootstrap. This is not counted as a toolchain failure.' -ForegroundColor DarkYellow
+        return
+    }
+
+    $linkerDir = Split-Path -Parent $linker
+    if ($env:Path -notlike "*$linkerDir*") {
+        $env:Path = "$linkerDir;$env:Path"
     }
 
     Write-Host "Using MSVC linker: $linker" -ForegroundColor DarkGray
-    Write-Host 'Installing tauri-cli via cargo...' -ForegroundColor Cyan
-    & cargo install tauri-cli --locked
+
+    $vsDevCmd = Find-VsDevCmd
+    if ($vsDevCmd) {
+        Write-Host "Using Visual Studio Developer Shell: $vsDevCmd" -ForegroundColor DarkGray
+        Write-Host 'Installing tauri-cli via cargo...' -ForegroundColor Cyan
+        & cmd.exe /d /s /c "`"$vsDevCmd`" -arch=x64 -host_arch=x64 >nul && cargo install tauri-cli --locked"
+    } else {
+        Write-Host 'Visual Studio Developer Shell was not found; falling back to current PowerShell environment.' -ForegroundColor Yellow
+        Write-Host 'Installing tauri-cli via cargo...' -ForegroundColor Cyan
+        & cargo install tauri-cli --locked
+    }
+
     if ($LASTEXITCODE -ne 0) { throw "cargo install tauri-cli failed with exit code $LASTEXITCODE." }
 }
 
@@ -151,7 +195,7 @@ Invoke-ToolStep 'FiraCode Nerd Font' {
         Write-Host 'Installing FiraCode Nerd Font...' -ForegroundColor Cyan
         $fontZip = "$tmp\FiraCode.zip"
         $fontDir = "$tmp\FiraCode"
-        Invoke-WebRequest -Uri 'https://github.com/ryanoasis/nerd-fonts/releases/latest/download/FiraCode.zip' -OutFile $fontZip -UseBasicParsing
+        $oldProgress = $ProgressPreference; $ProgressPreference = 'SilentlyContinue'; try { Invoke-WebRequest -Uri 'https://github.com/ryanoasis/nerd-fonts/releases/latest/download/FiraCode.zip' -OutFile $fontZip -UseBasicParsing } finally { $ProgressPreference = $oldProgress }
         Expand-Archive -Path $fontZip -DestinationPath $fontDir -Force
 
         $shell = New-Object -ComObject Shell.Application

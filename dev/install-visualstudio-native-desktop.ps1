@@ -1,22 +1,19 @@
 # dev/install-visualstudio-native-desktop.ps1
 # Ensures the MSVC linker required by Rust/Tauri native builds is installed.
-# This fixes the common first-run error:
-#   error: linker link.exe not found
+# Fixes: error: linker link.exe not found
 #
-# Preferred result:
-#   Visual Studio / Build Tools has the Desktop development with C++ workload.
-#
-# Important:
-#   This script does NOT depend on winget. If winget/msstore sources are broken,
-#   it can still download the Visual Studio Build Tools bootstrapper directly.
+# This script does not require winget. It prefers an existing Visual Studio
+# installer, then a local cached bootstrapper, then a best-effort download.
 
 $ErrorActionPreference = 'Stop'
+try { [Console]::OutputEncoding = [System.Text.Encoding]::UTF8 } catch { }
 
 $WorkloadId = 'Microsoft.VisualStudio.Workload.NativeDesktop'
 $VcToolsComponentId = 'Microsoft.VisualStudio.Component.VC.Tools.x86.x64'
 $VsInstallerDir = Join-Path ${env:ProgramFiles(x86)} 'Microsoft Visual Studio\Installer'
 $SetupExe = Join-Path $VsInstallerDir 'setup.exe'
 $VsWhereExe = Join-Path $VsInstallerDir 'vswhere.exe'
+$RepoRoot = Split-Path -Parent $PSScriptRoot
 $TempRoot = Join-Path $env:TEMP 'machine-setup-installs'
 $BuildToolsBootstrapper = Join-Path $TempRoot 'vs_BuildTools.exe'
 $BuildToolsUrl = 'https://aka.ms/vs/17/release/vs_BuildTools.exe'
@@ -120,6 +117,15 @@ function Find-MsvcLinker {
     return $found
 }
 
+function Add-MsvcLinkerToCurrentPath {
+    param([Parameter(Mandatory=$true)][string]$LinkerPath)
+
+    $linkerDir = Split-Path -Parent $LinkerPath
+    if ($env:Path -notlike "*$linkerDir*") {
+        $env:Path = "$linkerDir;$env:Path"
+    }
+}
+
 function Wait-ForMsvcLinker {
     param([int]$Seconds = 180)
 
@@ -161,19 +167,69 @@ function Invoke-VsInstallerModify {
     }
 }
 
-function Install-BuildToolsWithNativeDesktopDirect {
-    Write-Host 'Installing Visual Studio Build Tools directly with Desktop development with C++ workload...' -ForegroundColor Cyan
-    Write-Host 'This bypasses winget so broken winget/msstore sources do not block the MSVC linker.' -ForegroundColor DarkGray
+function Find-LocalBuildToolsBootstrapper {
+    $candidates = @()
 
-    if (-not (Test-Path $BuildToolsBootstrapper)) {
-        Write-Host "Downloading Build Tools bootstrapper to $BuildToolsBootstrapper" -ForegroundColor Cyan
-        Invoke-WebRequest -Uri $BuildToolsUrl -OutFile $BuildToolsBootstrapper -UseBasicParsing
-    } else {
-        Write-Host "Using existing bootstrapper: $BuildToolsBootstrapper" -ForegroundColor DarkGray
+    if ($env:MACHINE_SETUP_VS_BOOTSTRAPPER) {
+        $candidates += $env:MACHINE_SETUP_VS_BOOTSTRAPPER
     }
 
+    $candidates += @(
+        (Join-Path $RepoRoot 'installers\vs_BuildTools.exe'),
+        (Join-Path $RepoRoot 'installers\vs_Community.exe'),
+        (Join-Path $RepoRoot 'offline\vs_BuildTools.exe'),
+        (Join-Path $RepoRoot 'offline\vs_Community.exe'),
+        $BuildToolsBootstrapper
+    )
+
+    foreach ($candidate in $candidates) {
+        if ($candidate -and (Test-Path $candidate)) { return $candidate }
+    }
+
+    return $null
+}
+
+function Get-BuildToolsBootstrapper {
+    $local = Find-LocalBuildToolsBootstrapper
+    if ($local) {
+        Write-Host "Using local Visual Studio bootstrapper:" -ForegroundColor Green
+        Write-Host "  $local" -ForegroundColor DarkGray
+        return $local
+    }
+
+    Write-Host "No local Visual Studio bootstrapper found." -ForegroundColor Yellow
+    Write-Host "Trying direct download: $BuildToolsUrl" -ForegroundColor Cyan
+
+    try {
+        $oldProgress = $ProgressPreference
+        $ProgressPreference = 'SilentlyContinue'
+        Invoke-WebRequest -Uri $BuildToolsUrl -OutFile $BuildToolsBootstrapper -UseBasicParsing -ErrorAction Stop
+        return $BuildToolsBootstrapper
+    } catch {
+        throw @"
+Could not download Visual Studio Build Tools from $BuildToolsUrl.
+Reason: $($_.Exception.Message)
+
+Fix for fresh/wiped installs:
+  1. On a working machine, download Visual Studio Build Tools once.
+  2. Save it here in this repo/USB:
+       installers\vs_BuildTools.exe
+  3. Re-run quickstart/bootstrap.
+
+The installer will use that local file and will not need aka.ms for this step.
+"@
+    } finally {
+        if ($null -ne $oldProgress) { $ProgressPreference = $oldProgress }
+    }
+}
+
+function Install-BuildToolsWithNativeDesktopDirect {
+    Write-Host 'Installing Visual Studio Build Tools with Desktop development with C++ workload...' -ForegroundColor Cyan
+    Write-Host 'This bypasses winget so broken winget/msstore sources do not block the MSVC linker.' -ForegroundColor DarkGray
+
+    $bootstrapper = Get-BuildToolsBootstrapper
     $args = "--quiet --wait --norestart --add $WorkloadId --includeRecommended"
-    $exitCode = Invoke-ProcessWithHeartbeat -FilePath $BuildToolsBootstrapper -ArgumentList $args -Activity 'Visual Studio Build Tools install'
+    $exitCode = Invoke-ProcessWithHeartbeat -FilePath $bootstrapper -ArgumentList $args -Activity 'Visual Studio Build Tools install'
 
     if ($exitCode -notin @(0, 3010)) {
         throw "Visual Studio Build Tools installer failed with exit code $exitCode."
@@ -186,6 +242,7 @@ function Install-BuildToolsWithNativeDesktopDirect {
 
 $linker = Find-MsvcLinker
 if ($linker) {
+    Add-MsvcLinkerToCurrentPath -LinkerPath $linker
     Write-Host "MSVC linker already present:" -ForegroundColor Green
     Write-Host "  $linker" -ForegroundColor DarkGray
     return
@@ -213,5 +270,6 @@ if (-not $linker) {
     throw "Desktop development with C++ workload was requested, but link.exe still was not found. Open Visual Studio Installer and verify '$WorkloadId'."
 }
 
+Add-MsvcLinkerToCurrentPath -LinkerPath $linker
 Write-Host "MSVC linker ready:" -ForegroundColor Green
 Write-Host "  $linker" -ForegroundColor DarkGray
