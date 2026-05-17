@@ -7,7 +7,7 @@ This repo is a Windows 11 recovery/setup toolkit for rebuilding a dev machine af
 The goal is to turn the current scripts into a proper modular setup console with:
 
 - one internet launcher
-- one local USB launcher
+- one local USB driver-rescue launcher
 - one main setup wizard
 - one task engine
 - one manifest
@@ -23,11 +23,12 @@ Internet path:
 
     irm https://raw.githubusercontent.com/randymfournier/machine-setup/main/quickstart.ps1 | iex
 
-USB/no-network path:
+USB driver-rescue path:
 
     _START_HERE.cmd
 
-Both should launch the same setup console.
+The internet path launches the setup console. The USB path installs recovery
+drivers first, then hands off to the internet path once networking is available.
 
 ## Hard rules
 
@@ -114,15 +115,18 @@ Not allowed:
 
 ### quickstart-local.ps1
 
-USB/local launcher only.
+USB/local driver-rescue launcher only.
 
 Allowed:
 - admin check
 - execution-policy bypass for this process
 - install emergency exported drivers if present
-- copy repo to C:\machine-setup
-- unblock repo scripts
-- launch setup.ps1
+- test whether the GitHub quickstart is reachable
+- launch the primary GitHub quickstart once network is ready
+
+Not allowed:
+- run full setup directly from the USB repo copy
+- copy the USB repo to C:\machine-setup as the primary path
 
 ### _START_HERE.cmd
 

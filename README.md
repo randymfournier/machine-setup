@@ -5,7 +5,7 @@ Reproducible Windows 11 recovery and dev-machine setup as code.
 This repo is a setup framework for rebuilding a Windows 11 development machine after a wipe/reinstall. It supports:
 
 - an internet launcher
-- a local USB launcher
+- a local USB driver-rescue launcher
 - a setup console
 - a manifest-driven task engine
 - modular setup tasks
@@ -20,7 +20,7 @@ Fresh install with internet:
 irm https://raw.githubusercontent.com/randymfournier/machine-setup/main/quickstart.ps1 | iex
 ```
 
-USB/no-network path:
+USB driver-rescue path:
 
 ```text
 D:\_START_HERE.cmd
@@ -35,9 +35,10 @@ Modern Windows should not be expected to automatically run commands from USB dri
 1. Install Windows 11.
 2. If Wi-Fi/touchpad works, run the internet launcher.
 3. If Wi-Fi/touchpad does not work, run `_START_HERE.cmd` from the recovery USB.
-4. The launcher starts `setup.ps1`.
-5. The setup console waits for you to choose a mode and confirm before running anything.
-6. Review the final summary and reboot manually only if Windows asks.
+4. The USB launcher installs saved recovery drivers only.
+5. Once networking is available, it hands off to the internet launcher so the latest GitHub repo is used.
+6. The setup console waits for you to choose a mode and confirm before running anything.
+7. Review the final summary and reboot manually only if Windows asks.
 
 ## Setup Modes
 
@@ -101,8 +102,8 @@ The recovery USB prepare tool writes both:
 ```text
 machine-setup/
   quickstart.ps1                 internet launcher
-  quickstart-local.ps1           USB/local launcher
-  _START_HERE.cmd                preferred USB launcher
+  quickstart-local.ps1           USB driver-rescue launcher
+  _START_HERE.cmd                preferred USB driver-rescue launcher
   setup.ps1                      main setup console
   setup.json                     central manifest
   core/                          engine, UI, detection, logging, state, native helpers

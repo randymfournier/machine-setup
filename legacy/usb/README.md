@@ -6,7 +6,7 @@ This folder turns `machine-setup` into a small recovery toolkit, not just a boot
 
 Use it to:
 
-- start machine setup after a fresh Windows install
+- rescue network/input drivers after a fresh Windows install
 - install saved Wi-Fi/touchpad drivers when the fresh ISO has no network or working touchpad
 - keep local recovery assets such as `winget.msixbundle` and `vs_BuildTools.exe`
 - read the rebuild instructions even months later
@@ -24,11 +24,14 @@ Use one of these launch paths:
    irm https://raw.githubusercontent.com/randymfournier/machine-setup/main/quickstart.ps1 | iex
    ```
 
-2. No-Wi-Fi/no-touchpad local USB path:
+2. No-Wi-Fi/no-touchpad USB driver-rescue path:
 
    ```text
    D:\_START_HERE.cmd
    ```
+
+   This installs saved recovery drivers only, then hands off to the primary
+   GitHub quickstart once networking is available.
 
 ## Recommended maintenance flow before a wipe
 
@@ -47,7 +50,7 @@ That keeps the USB ready without needing to remember long commands.
 
 The utility copies this repo to the target USB, excluding logs and Git internals, then writes:
 
-- `_START_HERE.cmd`
+- `_START_HERE.cmd` driver-rescue launcher
 - `Start-MachineSetup.cmd` compatibility alias
 - `README-FIRST.txt`
 

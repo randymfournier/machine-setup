@@ -1,19 +1,15 @@
 # quickstart-local.ps1
-# Offline/local USB entry point for the ugly case where a fresh Windows install
-# has no Wi-Fi and/or no usable touchpad yet.
+# Local USB driver-rescue entry point.
 #
 # Easiest path from USB:
 #   Run _START_HERE.cmd
 #
-# Keyboard-only fallback, replacing D: with the USB drive letter:
-#   D:\_START_HERE.cmd
-#
-# This script does not need Git or winget. It installs saved local drivers,
-# copies this repo to C:\machine-setup, then launches setup.ps1 with
-# -NoProfile and -ExecutionPolicy Bypass. If the wizard is missing, it falls
-# back to legacy compatibility launchers.
+# This script intentionally does not run the full setup from the USB copy.
+# The USB may be stale. Its job is to install saved Wi-Fi/touchpad drivers,
+# then hand off to the primary GitHub quickstart once networking is available.
 
 $ErrorActionPreference = 'Stop'
+try { [Console]::OutputEncoding = [System.Text.Encoding]::UTF8 } catch { }
 
 if (-NOT ([Security.Principal.WindowsPrincipal][Security.Principal.WindowsIdentity]::GetCurrent()).IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator)) {
     Write-Host "Run this from PowerShell/CMD as Administrator." -ForegroundColor Red
@@ -31,75 +27,45 @@ if ([string]::IsNullOrWhiteSpace($SourceRoot)) {
     $SourceRoot = (Get-Location).Path
 }
 
-$RepoPath = 'C:\machine-setup'
+$QuickstartUrl = 'https://raw.githubusercontent.com/randymfournier/machine-setup/main/quickstart.ps1'
 
-Write-Host "machine-setup local USB bootstrap" -ForegroundColor Green
+function Test-InternetReady {
+    try {
+        $response = Invoke-WebRequest -Uri 'https://raw.githubusercontent.com' -UseBasicParsing -Method Head -TimeoutSec 15 -ErrorAction Stop
+        return ($response.StatusCode -ge 200 -and $response.StatusCode -lt 500)
+    } catch {
+        return $false
+    }
+}
+
+Write-Host "machine-setup USB driver rescue" -ForegroundColor Green
 Write-Host "Source: $SourceRoot" -ForegroundColor Cyan
-Write-Host "Target: $RepoPath" -ForegroundColor Cyan
 
-# Install exported drivers before doing anything network-dependent.
 $driverInstaller = Join-Path $SourceRoot 'legacy\drivers\install-exported-drivers.ps1'
 if (Test-Path $driverInstaller) {
     Write-Host "`nInstalling saved Wi-Fi/touchpad recovery drivers if present..." -ForegroundColor Cyan
     try {
         & powershell.exe -NoLogo -NoProfile -ExecutionPolicy Bypass -File $driverInstaller
+        if ($LASTEXITCODE -ne 0) {
+            Write-Warning "Driver install returned exit code $LASTEXITCODE. Continuing to network check."
+        }
     } catch {
         Write-Warning "Local driver install failed or no exported folder was found: $($_.Exception.Message)"
-        Write-Warning "Continuing anyway."
+        Write-Warning "Continuing to network check."
     }
 } else {
-    Write-Warning "Driver installer not found at $driverInstaller. Continuing."
+    Write-Warning "Driver installer not found at $driverInstaller. Continuing to network check."
 }
 
-# Copy repo from USB/local source to C:\machine-setup unless already there.
-$sourceFull = [System.IO.Path]::GetFullPath($SourceRoot).TrimEnd('\')
-$targetFull = [System.IO.Path]::GetFullPath($RepoPath).TrimEnd('\')
-
-if ($sourceFull -ieq $targetFull) {
-    Write-Host "Source is already C:\machine-setup. No copy needed." -ForegroundColor DarkGray
-} else {
-    New-Item -ItemType Directory -Path $RepoPath -Force | Out-Null
-    Write-Host "`nCopying setup repo to $RepoPath ..." -ForegroundColor Cyan
-    & robocopy $SourceRoot $RepoPath /E /XD .git logs /NFL /NDL /NJH /NJS /NP
-    $robocopyExit = $LASTEXITCODE
-    if ($robocopyExit -ge 8) {
-        throw "robocopy failed with exit code $robocopyExit."
-    }
+Write-Host "`nChecking whether the GitHub quickstart is reachable..." -ForegroundColor Cyan
+if (-not (Test-InternetReady)) {
+    Write-Host "Network is still not ready." -ForegroundColor Yellow
+    Write-Host "Connect Wi-Fi/Ethernet if possible, then run the primary command:" -ForegroundColor Yellow
+    Write-Host "  irm $QuickstartUrl | iex" -ForegroundColor White
+    Write-Host ""
+    Write-Host "If the driver install failed, inspect the exported driver folder on this USB." -ForegroundColor Yellow
+    exit 20
 }
 
-try {
-    Get-ChildItem -Path $RepoPath -Recurse -File | Unblock-File -ErrorAction SilentlyContinue
-} catch {
-    Write-Warning "Could not unblock all repo files: $($_.Exception.Message)"
-}
-
-$setupPath = Join-Path $RepoPath 'setup.ps1'
-$wizardPath = Join-Path $RepoPath 'legacy\setup-wizard-wrapper.ps1'
-$bootstrapPath = Join-Path $RepoPath 'legacy\bootstrap.ps1'
-
-if (Test-Path $setupPath) {
-    Write-Host "`nLaunching setup.ps1 with -NoProfile and -ExecutionPolicy Bypass...`n" -ForegroundColor Green
-    & powershell.exe -NoLogo -NoProfile -ExecutionPolicy Bypass -File $setupPath
-    $setupExit = $LASTEXITCODE
-
-    if ($setupExit -ne 0) {
-        Write-Warning "setup.ps1 finished with exit code $setupExit. Check C:\machine-setup\logs for details."
-    }
-
-    exit $setupExit
-}
-
-Write-Warning "setup.ps1 was not found. Falling back to legacy compatibility launchers."
-if (Test-Path $wizardPath) {
-    & powershell.exe -NoLogo -NoProfile -ExecutionPolicy Bypass -File $wizardPath
-    exit $LASTEXITCODE
-}
-
-& powershell.exe -NoLogo -NoProfile -ExecutionPolicy Bypass -File $bootstrapPath
-$bootstrapExit = $LASTEXITCODE
-
-if ($bootstrapExit -ne 0) {
-    Write-Warning "bootstrap.ps1 finished with exit code $bootstrapExit. Check C:\machine-setup\logs for details."
-}
-
-exit $bootstrapExit
+Write-Host "Network looks ready. Launching primary GitHub quickstart..." -ForegroundColor Green
+Invoke-Expression (Invoke-RestMethod -Uri $QuickstartUrl -UseBasicParsing)

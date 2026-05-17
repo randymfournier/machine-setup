@@ -71,6 +71,9 @@ Fresh install with no Wi-Fi/touchpad:
 
      D:\_START_HERE.cmd
 
+  3. The USB launcher installs saved recovery drivers only.
+  4. Once network is available, it runs the primary GitHub quickstart.
+
 What this USB contains:
   - machine-setup repo
   - saved Wi-Fi/touchpad drivers if exported
@@ -84,7 +87,7 @@ Read:
 
 Notes:
   Modern Windows does not reliably autorun commands from USB drives for security reasons.
-  This USB gives you the shortest safe local launch path: _START_HERE.cmd.
+  This USB gives you the shortest safe driver-rescue path: _START_HERE.cmd.
 "@
 
     Set-Content -Path (Join-Path $TargetRoot 'README-FIRST.txt') -Value $content -Encoding ASCII
