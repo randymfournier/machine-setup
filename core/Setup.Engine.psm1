@@ -135,8 +135,6 @@ function Invoke-SetupTaskActionProcess {
                 Write-SetupLog -Message "TASK ${TaskId}: $line"
             }
             $seen = $lines.Count
-        } else {
-            Write-Host ("       [{0:mm\:ss}] {1} still running..." -f $sw.Elapsed, $TaskId) -ForegroundColor DarkGray
         }
     }
 

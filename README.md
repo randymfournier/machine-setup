@@ -114,7 +114,7 @@ machine-setup/
   windows/                       legacy Windows tweak/update/debloat scripts
   dev/                           legacy dev setup scripts and VS Code extension list
   wsl/                           WSL setup scripts
-  shell/                         PowerShell, Starship, Terminal config
+  shell/                         PowerShell, oh-my-posh, Terminal config
   git/                           Git config templates
   usb/                           USB docs and legacy prepare helper
   docs/                          future framework docs

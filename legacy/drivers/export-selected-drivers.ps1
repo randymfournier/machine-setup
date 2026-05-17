@@ -14,13 +14,19 @@
 
 [CmdletBinding()]
 param(
-    [string]$Destination = (Join-Path $PSScriptRoot ("exported-selected-{0}" -f (Get-Date -Format 'yyyy-MM-dd'))),
+    [string]$Destination,
     [string[]]$WifiKeywords = @('MediaTek','Wi-Fi','Wireless','WLAN','802.11','MT792','MT79'),
     [string[]]$TouchpadKeywords = @('Touchpad','Precision Touchpad','ELAN','Synaptics','I2C HID','HID-compliant touch pad','Serial IO','I2C Host Controller','GPIO Host Controller','INTC1082','INTC1084','7F4C','7F4D','7F4E','7F7A','7F7B'),
     [switch]$ListCandidates
 )
 
 $ErrorActionPreference = 'Stop'
+
+if (-not $Destination) {
+    $scriptRoot = if ($PSScriptRoot) { $PSScriptRoot } else { Split-Path -Parent $MyInvocation.MyCommand.Path }
+    if (-not $scriptRoot) { $scriptRoot = (Get-Location).Path }
+    $Destination = Join-Path $scriptRoot ("exported-selected-{0}" -f (Get-Date -Format 'yyyy-MM-dd'))
+}
 
 function Assert-Admin {
     if (-NOT ([Security.Principal.WindowsPrincipal][Security.Principal.WindowsIdentity]::GetCurrent()).IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator)) {

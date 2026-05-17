@@ -6,8 +6,9 @@ Put these files here before copying this repo to a recovery USB:
 
 ```text
 installers/
-├── vs_BuildTools.exe
-└── winget.msixbundle
+- ScreenRec_webinstall_all.exe
+- vs_BuildTools.exe
+- winget.msixbundle
 ```
 
 Why this exists:
@@ -15,6 +16,7 @@ Why this exists:
 - Fresh Windows installs can have broken DNS/source metadata for `aka.ms`.
 - Wi-Fi or App Installer/winget may not be healthy yet.
 - The bootstrap can use these local files instead of downloading them during the fragile first-run window.
+- ScreenRec is not available through winget, so the setup task uses this local installer when present.
 
 Use the root script below on a working machine:
 

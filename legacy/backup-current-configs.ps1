@@ -28,7 +28,7 @@ Write-Host "--- Shell ---" -ForegroundColor Yellow
 Copy-IfExists "$env:USERPROFILE\Documents\PowerShell\Microsoft.PowerShell_profile.ps1"        "$backupRoot\powershell" "PowerShell 7 profile"
 Copy-IfExists "$env:USERPROFILE\Documents\WindowsPowerShell\Microsoft.PowerShell_profile.ps1" "$backupRoot\powershell" "Windows PowerShell 5.1 profile"
 Copy-IfExists "$env:LOCALAPPDATA\Packages\Microsoft.WindowsTerminal_8wekyb3d8bbwe\LocalState\settings.json" "$backupRoot\windows-terminal" "Windows Terminal settings"
-Copy-IfExists "$env:USERPROFILE\.config\starship.toml" "$backupRoot\starship" "Starship config (if any)"
+Copy-IfExists "$env:USERPROFILE\.config\oh-my-posh" "$backupRoot\oh-my-posh" "oh-my-posh config (if any)"
 
 Write-Host ""
 Write-Host "--- Git ---" -ForegroundColor Yellow

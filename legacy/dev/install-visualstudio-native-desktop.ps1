@@ -2,8 +2,9 @@
 # Ensures the MSVC linker required by Rust/Tauri native builds is installed.
 # Fixes: error: linker link.exe not found
 #
-# This script does not require winget. It prefers an existing Visual Studio
-# installer, then a local cached bootstrapper, then a best-effort download.
+# This script does not require winget. It installs Visual Studio Build Tools
+# directly, then only modifies a full Visual Studio install if explicitly
+# requested with MACHINE_SETUP_ALLOW_FULL_VS_MODIFY=1.
 
 $ErrorActionPreference = 'Stop'
 try { [Console]::OutputEncoding = [System.Text.Encoding]::UTF8 } catch { }
@@ -13,7 +14,7 @@ $VcToolsComponentId = 'Microsoft.VisualStudio.Component.VC.Tools.x86.x64'
 $VsInstallerDir = Join-Path ${env:ProgramFiles(x86)} 'Microsoft Visual Studio\Installer'
 $SetupExe = Join-Path $VsInstallerDir 'setup.exe'
 $VsWhereExe = Join-Path $VsInstallerDir 'vswhere.exe'
-$RepoRoot = Split-Path -Parent $PSScriptRoot
+$RepoRoot = Split-Path -Parent (Split-Path -Parent $PSScriptRoot)
 $TempRoot = Join-Path $env:TEMP 'machine-setup-installs'
 $BuildToolsBootstrapper = Join-Path $TempRoot 'vs_BuildTools.exe'
 $BuildToolsUrl = 'https://aka.ms/vs/17/release/vs_BuildTools.exe'
@@ -155,7 +156,7 @@ function Invoke-VsInstallerModify {
     Write-Host "Adding Desktop development with C++ workload to:" -ForegroundColor Cyan
     Write-Host "  $InstallPath" -ForegroundColor DarkGray
 
-    $args = "modify --installPath `"$InstallPath`" --add $WorkloadId --includeRecommended --quiet --wait --norestart"
+    $args = "modify --installPath `"$InstallPath`" --add $WorkloadId --includeRecommended --quiet --norestart"
     $exitCode = Invoke-ProcessWithHeartbeat -FilePath $SetupExe -ArgumentList $args -Activity 'Visual Studio workload modify'
 
     if ($exitCode -notin @(0, 3010)) {
@@ -175,10 +176,9 @@ function Find-LocalBuildToolsBootstrapper {
     }
 
     $candidates += @(
+        (Join-Path $RepoRoot 'assets\installers\vs_BuildTools.exe'),
         (Join-Path $RepoRoot 'installers\vs_BuildTools.exe'),
-        (Join-Path $RepoRoot 'installers\vs_Community.exe'),
         (Join-Path $RepoRoot 'offline\vs_BuildTools.exe'),
-        (Join-Path $RepoRoot 'offline\vs_Community.exe'),
         $BuildToolsBootstrapper
     )
 
@@ -213,7 +213,7 @@ Reason: $($_.Exception.Message)
 Fix for fresh/wiped installs:
   1. On a working machine, download Visual Studio Build Tools once.
   2. Save it here in this repo/USB:
-       installers\vs_BuildTools.exe
+       assets\installers\vs_BuildTools.exe
   3. Re-run quickstart/bootstrap.
 
 The installer will use that local file and will not need aka.ms for this step.
@@ -248,10 +248,15 @@ if ($linker) {
     return
 }
 
-Write-Host 'MSVC linker was not found. Installing/modifying Visual Studio C++ workload...' -ForegroundColor Cyan
+Write-Host 'MSVC linker was not found. Installing Visual Studio Build Tools C++ workload...' -ForegroundColor Cyan
 
-$installPaths = @(Get-VisualStudioInstallPaths)
-if ($installPaths.Count -gt 0 -and (Test-Path $SetupExe)) {
+Install-BuildToolsWithNativeDesktopDirect
+Refresh-Path
+$linker = Wait-ForMsvcLinker -Seconds 240
+
+if (-not $linker -and $env:MACHINE_SETUP_ALLOW_FULL_VS_MODIFY -eq '1') {
+    Write-Host 'Build Tools did not expose link.exe. Opt-in full Visual Studio modify is enabled.' -ForegroundColor Yellow
+    $installPaths = @(Get-VisualStudioInstallPaths)
     foreach ($installPath in $installPaths) {
         Invoke-VsInstallerModify -InstallPath $installPath
         Refresh-Path
@@ -261,13 +266,7 @@ if ($installPaths.Count -gt 0 -and (Test-Path $SetupExe)) {
 }
 
 if (-not $linker) {
-    Install-BuildToolsWithNativeDesktopDirect
-    Refresh-Path
-    $linker = Wait-ForMsvcLinker -Seconds 240
-}
-
-if (-not $linker) {
-    throw "Desktop development with C++ workload was requested, but link.exe still was not found. Open Visual Studio Installer and verify '$WorkloadId'."
+    throw "Visual Studio Build Tools with '$WorkloadId' was requested, but link.exe still was not found."
 }
 
 Add-MsvcLinkerToCurrentPath -LinkerPath $linker

@@ -21,7 +21,7 @@
 #   visualstudio   -- Visual Studio C++ workload / MSVC linker verification
 #   toolchains     -- fnm, uv, Rust, Tauri CLI, fonts, etc.
 #   vscode         -- VS Code extensions
-#   dotfiles       -- copy PowerShell profile, starship, etc.
+#   dotfiles       -- copy PowerShell profile, oh-my-posh, etc.
 #   wsl            -- WSL2 + Ubuntu install
 #
 # Opt in to debloat (removes Teams, Xbox, Bing, etc.):
@@ -490,10 +490,10 @@ try {
         if (-not (Test-Path $profileDir)) { New-Item -ItemType Directory -Path $profileDir -Force | Out-Null }
         Copy-Item (Join-Path $RepoRoot 'assets\shell\Microsoft.PowerShell_profile.ps1') $PROFILE -Force
 
-        # Starship config
-        $starshipConfig = "$env:USERPROFILE\.config\starship.toml"
-        New-Item -ItemType Directory -Path (Split-Path $starshipConfig) -Force | Out-Null
-        Copy-Item (Join-Path $RepoRoot 'assets\shell\starship.toml') $starshipConfig -Force
+        # oh-my-posh config
+        $ompConfig = "$env:USERPROFILE\.config\oh-my-posh\blueish.omp.json"
+        New-Item -ItemType Directory -Path (Split-Path $ompConfig) -Force | Out-Null
+        Copy-Item (Join-Path $RepoRoot 'assets\shell\blueish.omp.json') $ompConfig -Force
 
         # Windows Terminal settings (only if Terminal is installed)
         $wtSettings = "$env:LOCALAPPDATA\Packages\Microsoft.WindowsTerminal_8wekyb3d8bbwe\LocalState\settings.json"

@@ -4,7 +4,7 @@
 #   - uv (Python toolchain)
 #   - rustup (Rust toolchain)
 #   - Tauri CLI (after MSVC/link.exe is verified by bootstrap)
-#   - FiraCode Nerd Font (for Starship glyphs in your terminal)
+#   - FiraCode Nerd Font (for prompt glyphs in your terminal)
 #   - ScreenRec note (manual download, not on winget)
 
 $ErrorActionPreference = 'Stop'

@@ -12,6 +12,9 @@
         "winget.repair",
         "git.install",
         "apps.install",
+        "screenrec.install",
+        "office.install",
+        "office.postInstall",
         "visualstudio.msvc",
         "toolchains.install",
         "windows.tweaks",
@@ -45,7 +48,9 @@
       "description": "Repair winget and install configured desktop apps.",
       "tasks": [
         "winget.repair",
-        "apps.install"
+        "apps.install",
+        "screenrec.install",
+        "office.install"
       ]
     },
     {
@@ -134,6 +139,41 @@
       "rebootBehavior": "MayRequireManualReboot"
     },
     {
+      "id": "office.install",
+      "label": "Install Microsoft Office",
+      "description": "Run Office Deployment Tool download and configure steps from assets\\office.",
+      "type": "setup",
+      "path": "tasks/office/install.ps1",
+      "requiresAdmin": true,
+      "requiresNetwork": true,
+      "dependencies": [],
+      "rebootBehavior": "MayRequireManualReboot"
+    },
+    {
+      "id": "screenrec.install",
+      "label": "Install ScreenRec",
+      "description": "Run the local ScreenRec NSIS installer silently when present.",
+      "type": "setup",
+      "path": "tasks/screenrec/install.ps1",
+      "requiresAdmin": false,
+      "requiresNetwork": true,
+      "dependencies": [],
+      "rebootBehavior": "None"
+    },
+    {
+      "id": "office.postInstall",
+      "label": "Office post-install",
+      "description": "Run optional local Office post-install script when present.",
+      "type": "setup",
+      "path": "tasks/office/postInstall.ps1",
+      "requiresAdmin": true,
+      "requiresNetwork": true,
+      "dependencies": [
+        "office.install"
+      ],
+      "rebootBehavior": "None"
+    },
+    {
       "id": "toolchains.install",
       "label": "Install developer toolchains",
       "description": "Install fnm, Node/npm, Rust, Python/uv, Go, and Tauri when MSVC is available.",
@@ -197,7 +237,7 @@
     {
       "id": "shell.config",
       "label": "Install shell config",
-      "description": "Copy PowerShell profile, Starship config, and Windows Terminal settings.",
+      "description": "Copy PowerShell profile, oh-my-posh config, and Windows Terminal settings.",
       "type": "setup",
       "path": "tasks/powershell/shellConfig.ps1",
       "requiresAdmin": false,

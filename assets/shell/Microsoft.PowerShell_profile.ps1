@@ -1,9 +1,10 @@
 # shell/Microsoft.PowerShell_profile.ps1
 # Lives at: $PROFILE  (typically C:\Users\<you>\Documents\PowerShell\Microsoft.PowerShell_profile.ps1)
 
-# --- Starship prompt -------------------------------------------------------
-if (Get-Command starship -ErrorAction SilentlyContinue) {
-    Invoke-Expression (&starship init powershell)
+# --- Oh My Posh prompt -----------------------------------------------------
+$ompConfig = Join-Path $env:USERPROFILE '.config\oh-my-posh\blueish.omp.json'
+if ((Get-Command oh-my-posh -ErrorAction SilentlyContinue) -and (Test-Path $ompConfig)) {
+    oh-my-posh init pwsh --config $ompConfig | Invoke-Expression
 }
 
 # --- fnm (Node version manager) -------------------------------------------
@@ -25,8 +26,13 @@ if ((Test-Path $cargoBin) -and ($env:Path -notlike "*$cargoBin*")) {
 
 # --- PSReadLine: better history & completion ------------------------------
 if (Get-Module -ListAvailable -Name PSReadLine) {
-    Set-PSReadLineOption -PredictionSource HistoryAndPlugin
-    Set-PSReadLineOption -PredictionViewStyle ListView
+    $psReadLineOptions = (Get-Command Set-PSReadLineOption -ErrorAction SilentlyContinue).Parameters
+    if ($psReadLineOptions.ContainsKey('PredictionSource')) {
+        Set-PSReadLineOption -PredictionSource HistoryAndPlugin
+    }
+    if ($psReadLineOptions.ContainsKey('PredictionViewStyle')) {
+        Set-PSReadLineOption -PredictionViewStyle ListView
+    }
     Set-PSReadLineKeyHandler -Key Tab -Function MenuComplete
 }
 
@@ -35,7 +41,6 @@ Set-Alias -Name g     -Value git
 Set-Alias -Name py    -Value python
 Set-Alias -Name k     -Value kubectl -ErrorAction SilentlyContinue
 Set-Alias -Name d     -Value docker
-Set-Alias -Name dc    -Value 'docker compose' -ErrorAction SilentlyContinue
 Set-Alias -Name ll    -Value Get-ChildItem
 Set-Alias -Name which -Value Get-Command
 
@@ -43,6 +48,8 @@ Set-Alias -Name which -Value Get-Command
 function .. { Set-Location .. }
 function ... { Set-Location ..\.. }
 function .... { Set-Location ..\..\.. }
+
+function dc { docker compose $args }
 
 # Git shortcuts
 function gs { git status $args }

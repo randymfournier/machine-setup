@@ -67,11 +67,6 @@ if ! command -v go >/dev/null; then
     rm "go${GO_VERSION}.linux-amd64.tar.gz"
 fi
 
-echo "=== Installing Starship ==="
-if ! command -v starship >/dev/null; then
-    curl -sS https://starship.rs/install.sh | sh -s -- -y
-fi
-
 echo "=== Configuring shell (~/.bashrc additions) ==="
 # Add stuff to .bashrc only if not already there
 add_to_bashrc() {
@@ -91,17 +86,7 @@ add_to_bashrc "# machine-setup: fnm" \
 export PATH="$HOME/.local/share/fnm:$PATH"
 eval "$(fnm env --use-on-cd)"'
 
-add_to_bashrc "# machine-setup: starship" \
-'# machine-setup: starship
-eval "$(starship init bash)"'
-
-# Copy the same starship config used on Windows
-if [ -f "$(dirname "$0")/../../assets/shell/starship.toml" ]; then
-    mkdir -p ~/.config
-    cp "$(dirname "$0")/../../assets/shell/starship.toml" ~/.config/starship.toml
-fi
-
 echo
 echo "=== WSL/Ubuntu setup complete. ==="
 echo "Open a new shell or run:  source ~/.bashrc"
-echo "Verify:  uv --version && fnm --version && rustc --version && go version && starship --version"
+echo "Verify:  uv --version && fnm --version && rustc --version && go version"
