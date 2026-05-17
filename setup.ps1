@@ -261,8 +261,8 @@ function Invoke-ModeSelection {
 
     if ($TaskIds.Count -eq 0) { return }
 
-    $mode = Get-ModeById -Manifest $Manifest -Id $ModeId
-    $modeLabel = if ($mode) { $mode.label } else { $ModeId }
+    $selectedModeItem = Get-ModeById -Manifest $Manifest -Id $ModeId
+    $modeLabel = if ($selectedModeItem) { $selectedModeItem.label } else { $ModeId }
     $resolvedIds = @(Resolve-SetupTasks -Manifest $Manifest -TaskIds $TaskIds)
     $resolvedTasks = @(Get-TasksByIds -Manifest $Manifest -TaskIds $resolvedIds)
 
@@ -384,24 +384,24 @@ while ($true) {
 
     switch -Regex ($choice) {
         '^1$' {
-            $mode = Get-ModeById -Manifest $manifest -Id 'recommended'
-            Invoke-ModeSelection -Manifest $manifest -ModeId 'recommended' -TaskIds @($mode.tasks)
+            $selectedModeItem = Get-ModeById -Manifest $manifest -Id 'recommended'
+            Invoke-ModeSelection -Manifest $manifest -ModeId 'recommended' -TaskIds @($selectedModeItem.tasks)
         }
         '^2$' {
             $ids = @(Select-SetupTasks -Manifest $manifest)
             Invoke-ModeSelection -Manifest $manifest -ModeId 'custom' -TaskIds $ids
         }
         '^3$' {
-            $mode = Get-ModeById -Manifest $manifest -Id 'minimal'
-            Invoke-ModeSelection -Manifest $manifest -ModeId 'minimal' -TaskIds @($mode.tasks)
+            $selectedModeItem = Get-ModeById -Manifest $manifest -Id 'minimal'
+            Invoke-ModeSelection -Manifest $manifest -ModeId 'minimal' -TaskIds @($selectedModeItem.tasks)
         }
         '^4$' {
-            $mode = Get-ModeById -Manifest $manifest -Id 'apps'
-            Invoke-ModeSelection -Manifest $manifest -ModeId 'apps' -TaskIds @($mode.tasks)
+            $selectedModeItem = Get-ModeById -Manifest $manifest -Id 'apps'
+            Invoke-ModeSelection -Manifest $manifest -ModeId 'apps' -TaskIds @($selectedModeItem.tasks)
         }
         '^5$' {
-            $mode = Get-ModeById -Manifest $manifest -Id 'dev'
-            Invoke-ModeSelection -Manifest $manifest -ModeId 'dev' -TaskIds @($mode.tasks)
+            $selectedModeItem = Get-ModeById -Manifest $manifest -Id 'dev'
+            Invoke-ModeSelection -Manifest $manifest -ModeId 'dev' -TaskIds @($selectedModeItem.tasks)
         }
         '^6$' { Show-ToolsMenu -Manifest $manifest }
         '^7$' { Show-LogsAndState -Manifest $manifest }

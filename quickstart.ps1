@@ -35,7 +35,26 @@ $RepoPath = 'C:\machine-setup'
 function Refresh-Path {
     $machinePath = [System.Environment]::GetEnvironmentVariable('Path','Machine')
     $userPath = [System.Environment]::GetEnvironmentVariable('Path','User')
-    $env:Path = @($machinePath, $userPath) -join ';'
+    $gitPaths = @(
+        "$env:ProgramFiles\Git\cmd",
+        "${env:ProgramFiles(x86)}\Git\cmd"
+    ) | Where-Object { $_ -and (Test-Path $_) }
+    $env:Path = @($machinePath, $userPath, $gitPaths) -join ';'
+}
+
+function Get-GitCommand {
+    Refresh-Path
+    $command = Get-Command git -ErrorAction SilentlyContinue
+    if ($command) { return $command.Source }
+
+    foreach ($candidate in @(
+        "$env:ProgramFiles\Git\cmd\git.exe",
+        "${env:ProgramFiles(x86)}\Git\cmd\git.exe"
+    )) {
+        if ($candidate -and (Test-Path $candidate)) { return $candidate }
+    }
+
+    return $null
 }
 
 function Invoke-NativeBestEffort {
@@ -65,7 +84,12 @@ function Invoke-NativeBestEffort {
                 return 124
             }
         }
-        return $p.ExitCode
+        try { $p.Refresh() } catch { }
+        if ($null -eq $p.ExitCode) {
+            Write-Warning "$Activity finished, but Windows did not report an exit code."
+            return 999
+        }
+        return [int]$p.ExitCode
     } catch {
         Write-Warning "$Activity failed to start/run: $($_.Exception.Message)"
         return 1
@@ -212,7 +236,7 @@ function Install-GitFromInstaller {
     param([Parameter(Mandatory=$true)][string]$InstallerPath)
 
     Write-Host "Using local Git installer: $InstallerPath" -ForegroundColor Green
-    return Invoke-NativeBestEffort -FilePath $InstallerPath -Arguments @('/VERYSILENT','/NORESTART','/NOCANCEL','/SP-') -TimeoutSeconds 300 -Activity 'Git for Windows installer'
+    return Invoke-NativeBestEffort -FilePath $InstallerPath -Arguments @('/VERYSILENT','/SUPPRESSMSGBOXES','/NORESTART','/NOCANCEL','/SP-') -TimeoutSeconds 300 -Activity 'Git for Windows installer'
 }
 
 function Repair-Winget {
@@ -255,7 +279,7 @@ function Repair-Winget {
 }
 
 # --- Ensure git is installed -----------------------------------------------
-if (-not (Get-Command git -ErrorAction SilentlyContinue)) {
+if (-not (Get-GitCommand)) {
     $localGitInstaller = Find-LocalGitInstaller
     $gitExit = 1
 
@@ -276,7 +300,12 @@ if (-not (Get-Command git -ErrorAction SilentlyContinue)) {
         }
 
         Write-Host "Installing Git via winget..." -ForegroundColor Cyan
-        $gitExit = Invoke-NativeBestEffort -FilePath 'winget' -Arguments @('install','--id','Git.Git','-e','--source','winget','--accept-package-agreements','--accept-source-agreements','--disable-interactivity') -TimeoutSeconds 300 -Activity 'winget install Git'
+        $gitExit = Invoke-NativeBestEffort -FilePath 'winget' -Arguments @('install','--id','Git.Git','-e','--source','winget','--accept-package-agreements','--accept-source-agreements','--silent','--disable-interactivity') -TimeoutSeconds 300 -Activity 'winget install Git'
+    }
+
+    if (Get-GitCommand) {
+        Write-Host 'Git installed and available.' -ForegroundColor Green
+        $gitExit = 0
     }
 
     if ($gitExit -ne 0) {
@@ -285,21 +314,26 @@ if (-not (Get-Command git -ErrorAction SilentlyContinue)) {
 
     Refresh-Path
 
-    if (-not (Get-Command git -ErrorAction SilentlyContinue)) {
+    if (-not (Get-GitCommand)) {
         throw "Git install completed, but git.exe is still not on PATH. Restart PowerShell and run quickstart again."
     }
 }
 
 # --- Clone or update -------------------------------------------------------
+$gitCommand = Get-GitCommand
+if (-not $gitCommand) {
+    throw "Git is not available. Install Git for Windows manually or place Git-64-bit.exe under an installers folder, then re-run quickstart."
+}
+
 if (Test-Path $RepoPath) {
     Write-Host "$RepoPath exists, pulling latest..." -ForegroundColor Cyan
-    git -C $RepoPath pull --ff-only
+    & $gitCommand -C $RepoPath pull --ff-only
     if ($LASTEXITCODE -ne 0) {
         throw "git pull failed with exit code $LASTEXITCODE."
     }
 } else {
     Write-Host "Cloning $RepoUrl to $RepoPath..." -ForegroundColor Cyan
-    git clone $RepoUrl $RepoPath
+    & $gitCommand clone $RepoUrl $RepoPath
     if ($LASTEXITCODE -ne 0) {
         throw "git clone failed with exit code $LASTEXITCODE."
     }

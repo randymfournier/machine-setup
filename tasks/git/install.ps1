@@ -7,7 +7,31 @@ param(
 
 Import-Module (Join-Path $RepoRoot 'core\Setup.Detect.psm1') -Force
 
-$hasGit = Test-SetupCommand -Name 'git'
+function Refresh-TaskPath {
+    $machinePath = [System.Environment]::GetEnvironmentVariable('Path','Machine')
+    $userPath = [System.Environment]::GetEnvironmentVariable('Path','User')
+    $gitPaths = @(
+        "$env:ProgramFiles\Git\cmd",
+        "${env:ProgramFiles(x86)}\Git\cmd"
+    ) | Where-Object { $_ -and (Test-Path $_) }
+    $env:Path = @($machinePath, $userPath, $gitPaths) -join ';'
+}
+
+function Test-GitAvailable {
+    Refresh-TaskPath
+    if (Test-SetupCommand -Name 'git') { return $true }
+
+    foreach ($candidate in @(
+        "$env:ProgramFiles\Git\cmd\git.exe",
+        "${env:ProgramFiles(x86)}\Git\cmd\git.exe"
+    )) {
+        if ($candidate -and (Test-Path $candidate)) { return $true }
+    }
+
+    return $false
+}
+
+$hasGit = Test-GitAvailable
 function Invoke-NativeWithTimeout {
     param(
         [Parameter(Mandatory=$true)][string]$FilePath,
@@ -30,7 +54,12 @@ function Invoke-NativeWithTimeout {
         }
     }
 
-    return $process.ExitCode
+    try { $process.Refresh() } catch { }
+    if ($null -eq $process.ExitCode) {
+        Write-Host "$Activity finished, but Windows did not report an exit code."
+        return 999
+    }
+    return [int]$process.ExitCode
 }
 
 switch ($Action) {
@@ -53,7 +82,7 @@ switch ($Action) {
         $localInstaller = $installerCandidates | Where-Object { Test-Path $_ } | Select-Object -First 1
         if ($localInstaller) {
             Write-Host "Installing Git from local installer: $localInstaller"
-            $args = @('/VERYSILENT','/NORESTART','/NOCANCEL','/SP-')
+            $args = @('/VERYSILENT','/SUPPRESSMSGBOXES','/NORESTART','/NOCANCEL','/SP-')
             $p = Start-Process -FilePath $localInstaller -ArgumentList $args -Wait -PassThru
             if ($p.ExitCode -ne 0) {
                 Write-Host "Local Git installer failed with exit code $($p.ExitCode)."
@@ -61,21 +90,21 @@ switch ($Action) {
             }
         } elseif (Test-SetupWingetHealthy) {
             Write-Host 'Installing Git via winget.'
-            $exitCode = Invoke-NativeWithTimeout -FilePath 'winget' -Arguments @('install','--id','Git.Git','-e','--source','winget','--accept-package-agreements','--accept-source-agreements','--disable-interactivity') -Activity 'winget install Git' -TimeoutSeconds 300
+            $exitCode = Invoke-NativeWithTimeout -FilePath 'winget' -Arguments @('install','--id','Git.Git','-e','--source','winget','--accept-package-agreements','--accept-source-agreements','--silent','--disable-interactivity') -Activity 'winget install Git' -TimeoutSeconds 300
             if ($exitCode -ne 0) {
+                if (Test-GitAvailable) {
+                    Write-Host 'Git installed and available.'
+                    exit 0
+                }
                 Write-Host "winget install Git.Git failed with exit code $exitCode."
-                exit 1
+                exit $exitCode
             }
         } else {
             Write-Host 'Git is missing and no install source is available.'
             exit 20
         }
 
-        $machinePath = [System.Environment]::GetEnvironmentVariable('Path','Machine')
-        $userPath = [System.Environment]::GetEnvironmentVariable('Path','User')
-        $env:Path = @($machinePath, $userPath) -join ';'
-
-        if (Test-SetupCommand -Name 'git') {
+        if (Test-GitAvailable) {
             Write-Host 'Git installed and available.'
             exit 0
         }

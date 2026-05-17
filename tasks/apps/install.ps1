@@ -17,6 +17,10 @@ $bestEffortDependencyPackages = @(
     'Microsoft.WindowsAppRuntime.1.1'
 )
 
+$packageOverrides = @{
+    'Docker.DockerDesktop' = @('--override', 'install --quiet')
+}
+
 function Get-CleanWingetOutput {
     param([string[]]$Lines)
 
@@ -53,6 +57,9 @@ function Invoke-WingetPackageInstall {
         '--silent',
         '--disable-interactivity'
     )
+    if ($packageOverrides.ContainsKey($PackageId)) {
+        $args += $packageOverrides[$PackageId]
+    }
 
     Write-Host ''
     Write-Host ("[{0}/{1}] Installing {2}" -f $Index, $Total, $DisplayName) -ForegroundColor Cyan
@@ -77,6 +84,8 @@ function Invoke-WingetPackageInstall {
         $installed = ($joined -match 'Successfully installed|Installer hash verified successfully|Installation complete')
 
         if ($process.ExitCode -eq 0 -or $alreadyCurrent -or $installed) {
+            Stop-PackagePostInstallUi -PackageId $PackageId
+
             if ($alreadyCurrent) {
                 Write-Host ("[OK] {0} already installed/current" -f $DisplayName) -ForegroundColor Green
                 return [pscustomobject]@{ PackageId = $PackageId; DisplayName = $DisplayName; Status = 'Current'; ExitCode = $process.ExitCode; Detail = 'Already installed/current' }
@@ -108,6 +117,23 @@ function Invoke-WingetPackageInstall {
         return [pscustomobject]@{ PackageId = $PackageId; DisplayName = $DisplayName; Status = 'Failed'; ExitCode = 1; Detail = $_.Exception.Message }
     } finally {
         Remove-Item -Path $stdoutPath,$stderrPath -Force -ErrorAction SilentlyContinue
+    }
+}
+
+function Stop-PackagePostInstallUi {
+    param([Parameter(Mandatory=$true)][string]$PackageId)
+
+    if ($PackageId -ne 'Docker.DockerDesktop') { return }
+
+    $processNames = @(
+        'Docker Desktop',
+        'Docker Desktop Installer',
+        'Docker Desktop Backend',
+        'com.docker.backend'
+    )
+
+    foreach ($processName in $processNames) {
+        Get-Process -Name $processName -ErrorAction SilentlyContinue | Stop-Process -Force -ErrorAction SilentlyContinue
     }
 }
 
