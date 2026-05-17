@@ -209,27 +209,9 @@ function Find-LocalGitInstaller {
 }
 
 function Install-GitFromInstaller {
-    param([string]$InstallerPath)
+    param([Parameter(Mandatory=$true)][string]$InstallerPath)
 
-    if (-not $InstallerPath) {
-        $tempRoot = Join-Path $env:TEMP 'machine-setup-installs'
-        New-Item -ItemType Directory -Path $tempRoot -Force | Out-Null
-        $InstallerPath = Join-Path $tempRoot 'Git-64-bit.exe'
-        $uri = 'https://github.com/git-for-windows/git/releases/latest/download/Git-64-bit.exe'
-
-        Write-Host "Downloading Git for Windows installer..." -ForegroundColor Cyan
-        Write-Host "  $uri" -ForegroundColor DarkGray
-        $oldProgress = $ProgressPreference
-        try {
-            $ProgressPreference = 'SilentlyContinue'
-            Invoke-WebRequest -Uri $uri -OutFile $InstallerPath -UseBasicParsing -ErrorAction Stop
-        } finally {
-            if ($null -ne $oldProgress) { $ProgressPreference = $oldProgress }
-        }
-    } else {
-        Write-Host "Using local Git installer: $InstallerPath" -ForegroundColor Green
-    }
-
+    Write-Host "Using local Git installer: $InstallerPath" -ForegroundColor Green
     return Invoke-NativeBestEffort -FilePath $InstallerPath -Arguments @('/VERYSILENT','/NORESTART','/NOCANCEL','/SP-') -TimeoutSeconds 300 -Activity 'Git for Windows installer'
 }
 
@@ -277,11 +259,11 @@ if (-not (Get-Command git -ErrorAction SilentlyContinue)) {
     $localGitInstaller = Find-LocalGitInstaller
     $gitExit = 1
 
-    if ($localGitInstaller -or (Test-Network)) {
+    if ($localGitInstaller) {
         try {
             $gitExit = Install-GitFromInstaller -InstallerPath $localGitInstaller
         } catch {
-            Write-Warning "Git installer path failed: $($_.Exception.Message)"
+            Write-Warning "Local Git installer failed: $($_.Exception.Message)"
             $gitExit = 1
         }
     }

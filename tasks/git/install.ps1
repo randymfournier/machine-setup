@@ -66,28 +66,6 @@ switch ($Action) {
                 Write-Host "winget install Git.Git failed with exit code $exitCode."
                 exit 1
             }
-        } elseif (Test-SetupNetwork) {
-            $tempRoot = Join-Path $env:TEMP 'machine-setup-installs'
-            New-Item -ItemType Directory -Path $tempRoot -Force | Out-Null
-            $installer = Join-Path $tempRoot 'Git-64-bit.exe'
-            $uri = 'https://github.com/git-for-windows/git/releases/latest/download/Git-64-bit.exe'
-            Write-Host "Downloading Git installer: $uri"
-            $oldProgress = $ProgressPreference
-            $ProgressPreference = 'SilentlyContinue'
-            try {
-                Invoke-WebRequest -Uri $uri -OutFile $installer -UseBasicParsing -ErrorAction Stop
-            } catch {
-                Write-Host "Git download failed: $($_.Exception.Message)"
-                exit 1
-            } finally {
-                $ProgressPreference = $oldProgress
-            }
-
-            $p = Start-Process -FilePath $installer -ArgumentList @('/VERYSILENT','/NORESTART','/NOCANCEL','/SP-') -Wait -PassThru
-            if ($p.ExitCode -ne 0) {
-                Write-Host "Downloaded Git installer failed with exit code $($p.ExitCode)."
-                exit 1
-            }
         } else {
             Write-Host 'Git is missing and no install source is available.'
             exit 20

@@ -3,7 +3,14 @@
 # and confirms the selected checklist.
 
 [CmdletBinding()]
-param()
+param(
+    [ValidateSet('recommended','minimal','apps','dev')]
+    [string]$Mode,
+    [string[]]$TaskId = @(),
+    [string]$ToolId,
+    [switch]$ResumeSucceeded,
+    [switch]$List
+)
 
 $ErrorActionPreference = 'Stop'
 try { [Console]::OutputEncoding = [System.Text.Encoding]::ASCII } catch { }
@@ -199,6 +206,51 @@ function Show-ToolsMenu {
     }
 }
 
+function Invoke-ToolById {
+    param(
+        [Parameter(Mandatory=$true)]$Manifest,
+        [Parameter(Mandatory=$true)][string]$Id
+    )
+
+    $tool = $Manifest.tools | Where-Object { $_.id -eq $Id } | Select-Object -First 1
+    if (-not $tool) {
+        Write-Host "Tool '$Id' is not defined in setup.json." -ForegroundColor Red
+        exit 1
+    }
+
+    $toolPath = Join-Path $RepoRoot $tool.path
+    if (-not (Test-Path $toolPath)) {
+        Write-Host "Tool script not found: $toolPath" -ForegroundColor Red
+        exit 1
+    }
+
+    Write-Host ("Running tool: {0} [{1}]" -f $tool.label, $tool.id) -ForegroundColor Cyan
+    & powershell.exe -NoLogo -NoProfile -ExecutionPolicy Bypass -File $toolPath -RepoRoot $RepoRoot
+    exit $LASTEXITCODE
+}
+
+function Show-CommandLineUsage {
+    param([Parameter(Mandatory=$true)]$Manifest)
+
+    Write-Host 'Modes:' -ForegroundColor Cyan
+    foreach ($modeItem in $Manifest.modes) {
+        if ($modeItem.id -eq 'custom') { continue }
+        Write-Host ("  {0,-14} {1}" -f $modeItem.id, $modeItem.label)
+    }
+
+    Write-Host ''
+    Write-Host 'Tasks:' -ForegroundColor Cyan
+    foreach ($task in $Manifest.tasks) {
+        Write-Host ("  {0,-24} {1}" -f $task.id, $task.label)
+    }
+
+    Write-Host ''
+    Write-Host 'Tools:' -ForegroundColor Cyan
+    foreach ($tool in $Manifest.tools) {
+        Write-Host ("  {0,-24} {1}" -f $tool.id, $tool.label)
+    }
+}
+
 function Invoke-ModeSelection {
     param(
         [Parameter(Mandatory=$true)]$Manifest,
@@ -280,9 +332,34 @@ if (-not (Test-Path $ManifestPath)) {
 
 $manifest = Get-SetupManifest -Path $ManifestPath
 
+if ($List) {
+    Show-CommandLineUsage -Manifest $manifest
+    exit 0
+}
+
 if (-not (Test-SetupAdmin)) {
     Write-Host 'Run this setup console as Administrator.' -ForegroundColor Red
     exit 1
+}
+
+if ($TaskId.Count -gt 0) {
+    Invoke-ModeSelection -Manifest $manifest -ModeId 'custom' -TaskIds $TaskId -ResumeSucceeded:$ResumeSucceeded
+    exit 0
+}
+
+if ($Mode) {
+    $selectedMode = Get-ModeById -Manifest $manifest -Id $Mode
+    if (-not $selectedMode) {
+        Write-Host "Mode '$Mode' is not defined in setup.json." -ForegroundColor Red
+        exit 1
+    }
+
+    Invoke-ModeSelection -Manifest $manifest -ModeId $Mode -TaskIds @($selectedMode.tasks) -ResumeSucceeded:$ResumeSucceeded
+    exit 0
+}
+
+if ($ToolId) {
+    Invoke-ToolById -Manifest $manifest -Id $ToolId
 }
 
 while ($true) {

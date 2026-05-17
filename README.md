@@ -56,6 +56,91 @@ The main console provides:
 
 Nothing installs until a mode is selected and confirmed.
 
+## Usage Cheat Sheet
+
+Open PowerShell as Administrator before running setup commands.
+
+Start the interactive console:
+
+```powershell
+cd C:\machine-setup
+.\setup.ps1
+```
+
+List available modes, tasks, and tools:
+
+```powershell
+.\setup.ps1 -List
+```
+
+Run a full setup mode:
+
+```powershell
+.\setup.ps1 -Mode recommended
+.\setup.ps1 -Mode minimal
+.\setup.ps1 -Mode apps
+.\setup.ps1 -Mode dev
+```
+
+Run one specific task:
+
+```powershell
+.\setup.ps1 -TaskId shell.config
+```
+
+Run multiple specific tasks:
+
+```powershell
+.\setup.ps1 -TaskId powershell.policy,shell.config
+```
+
+Retry a mode or task list while skipping tasks that already succeeded in the saved state:
+
+```powershell
+.\setup.ps1 -Mode dev -ResumeSucceeded
+.\setup.ps1 -TaskId visualstudio.msvc,toolchains.install -ResumeSucceeded
+```
+
+Run a maintenance tool by id:
+
+```powershell
+.\setup.ps1 -ToolId diagnostics.run
+.\setup.ps1 -ToolId drivers.exportRecovery
+.\setup.ps1 -ToolId instructions.read
+```
+
+Run a task script directly, mostly for debugging:
+
+```powershell
+.\tasks\powershell\shellConfig.ps1 -Action Detect -RepoRoot C:\machine-setup
+.\tasks\powershell\shellConfig.ps1 -Action Invoke -RepoRoot C:\machine-setup
+.\tasks\powershell\shellConfig.ps1 -Action Verify -RepoRoot C:\machine-setup
+```
+
+Prefer `.\setup.ps1 -TaskId ...` for normal reruns because it keeps logs, state, dependency resolution, and verification together.
+
+Common task ids:
+
+```text
+powershell.policy       Set PowerShell execution policy
+git.install             Ensure Git is installed
+apps.install            Install winget apps
+screenrec.install       Install ScreenRec from local installer
+office.install          Install Microsoft Office
+office.postInstall      Run optional Office post-install hook
+visualstudio.msvc       Install MSVC / Visual Studio Build Tools
+toolchains.install      Install fnm, Node, Rust, Python/uv, Go, Tauri
+windows.tweaks          Apply Explorer/theme/power/startup tweaks
+windows.updates         Install Windows updates
+vscode.extensions       Install VS Code extensions
+git.config              Copy Git config templates
+shell.config            Copy PowerShell/oh-my-posh/Terminal config
+wsl.install             Install WSL / Ubuntu
+debloat.run             Optional Windows debloat task
+drivers.installRecovery Install exported Wi-Fi/touchpad drivers
+winget.repair           Repair App Installer / winget
+```
+
 ## What The Engine Does
 
 The task engine reads `setup.json`, resolves dependencies, adds prerequisites, writes logs/state, continues after non-fatal failures, blocks dependent tasks when prerequisites fail, and supports retry/resume.

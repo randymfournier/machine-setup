@@ -175,9 +175,21 @@ function Get-SetupPowerShellExecutionPolicy {
     }
 }
 
+function Get-SetupPowerShellEffectiveExecutionPolicy {
+    try {
+        return Get-ExecutionPolicy -ErrorAction Stop
+    } catch {
+        return 'Undefined'
+    }
+}
+
 function Test-SetupPowerShellPolicyReady {
     $policy = Get-SetupPowerShellExecutionPolicy
-    return ($policy -in @('RemoteSigned','Unrestricted','Bypass'))
+    $effectivePolicy = Get-SetupPowerShellEffectiveExecutionPolicy
+    return (
+        $policy -in @('RemoteSigned','Unrestricted','Bypass') -or
+        $effectivePolicy -in @('RemoteSigned','Unrestricted','Bypass')
+    )
 }
 
 function Test-SetupWindowsTweaksApplied {
@@ -232,6 +244,7 @@ function Get-SetupDetectionSnapshot {
         git = Test-SetupCommand -Name 'git'
         msvcLinker = if ($linker) { $linker } else { $null }
         powershellPolicy = Get-SetupPowerShellExecutionPolicy
+        powershellEffectivePolicy = Get-SetupPowerShellEffectiveExecutionPolicy
         powershellPolicyReady = Test-SetupPowerShellPolicyReady
         fnm = Test-SetupCommand -Name 'fnm'
         node = Test-SetupCommand -Name 'node'
@@ -248,4 +261,4 @@ function Get-SetupDetectionSnapshot {
     }
 }
 
-Export-ModuleMember -Function Test-SetupAdmin,Test-SetupNetwork,Test-SetupPendingReboot,Test-SetupCommand,Test-SetupDriverFolder,Find-SetupExportedDriverFolder,Test-SetupWingetHealthy,Find-SetupMsvcLinker,Test-SetupMsvcLinker,Get-SetupPowerShellExecutionPolicy,Test-SetupPowerShellPolicyReady,Test-SetupWindowsTweaksApplied,Test-SetupWslInstalled,Test-SetupWslUbuntuInstalled,Test-SetupVscodeCli,Test-SetupToolchain,Get-SetupDetectionSnapshot
+Export-ModuleMember -Function Test-SetupAdmin,Test-SetupNetwork,Test-SetupPendingReboot,Test-SetupCommand,Test-SetupDriverFolder,Find-SetupExportedDriverFolder,Test-SetupWingetHealthy,Find-SetupMsvcLinker,Test-SetupMsvcLinker,Get-SetupPowerShellExecutionPolicy,Get-SetupPowerShellEffectiveExecutionPolicy,Test-SetupPowerShellPolicyReady,Test-SetupWindowsTweaksApplied,Test-SetupWslInstalled,Test-SetupWslUbuntuInstalled,Test-SetupVscodeCli,Test-SetupToolchain,Get-SetupDetectionSnapshot

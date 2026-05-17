@@ -1,6 +1,19 @@
 # shell/Microsoft.PowerShell_profile.ps1
 # Lives at: $PROFILE  (typically C:\Users\<you>\Documents\PowerShell\Microsoft.PowerShell_profile.ps1)
 
+function Add-ProfilePath {
+    param([Parameter(Mandatory=$true)][string]$Path)
+
+    if ((Test-Path $Path) -and ($env:Path -notlike "*$Path*")) {
+        $env:Path = "$Path;$env:Path"
+    }
+}
+
+# Elevated PowerShell can miss user-scoped WinGet/tool paths.
+Add-ProfilePath (Join-Path $env:LOCALAPPDATA 'Microsoft\WinGet\Links')
+Add-ProfilePath (Join-Path $env:LOCALAPPDATA 'Programs\oh-my-posh\bin')
+Add-ProfilePath (Join-Path $env:ProgramFiles 'oh-my-posh\bin')
+
 # --- Oh My Posh prompt -----------------------------------------------------
 $ompConfig = Join-Path $env:USERPROFILE '.config\oh-my-posh\blueish.omp.json'
 if ((Get-Command oh-my-posh -ErrorAction SilentlyContinue) -and (Test-Path $ompConfig)) {
@@ -14,15 +27,11 @@ if (Get-Command fnm -ErrorAction SilentlyContinue) {
 
 # --- uv tool shims on PATH ------------------------------------------------
 $uvBin = "$env:USERPROFILE\.local\bin"
-if ((Test-Path $uvBin) -and ($env:Path -notlike "*$uvBin*")) {
-    $env:Path = "$uvBin;$env:Path"
-}
+Add-ProfilePath $uvBin
 
 # --- Cargo (Rust) bin -----------------------------------------------------
 $cargoBin = "$env:USERPROFILE\.cargo\bin"
-if ((Test-Path $cargoBin) -and ($env:Path -notlike "*$cargoBin*")) {
-    $env:Path = "$cargoBin;$env:Path"
-}
+Add-ProfilePath $cargoBin
 
 # --- PSReadLine: better history & completion ------------------------------
 if (Get-Module -ListAvailable -Name PSReadLine) {

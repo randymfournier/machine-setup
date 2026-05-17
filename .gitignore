@@ -38,12 +38,6 @@ drivers/exported-selected-*/
 assets/drivers/exported-*/
 assets/drivers/exported-selected-*/
 
-# Downloaded/offline recovery assets; keep generic binary payloads on USB/local disk, not GitHub.
-installers/*.exe
-installers/*.msixbundle
-assets/installers/*.exe
-assets/installers/*.msixbundle
-
 # Office install inputs are part of this repo; only the ODT-generated CDN cache is ignored.
 assets/office/Office/
 

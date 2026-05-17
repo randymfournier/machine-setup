@@ -12,10 +12,19 @@ if (-not $RepoRoot) {
 }
 
 $ompConfig = Join-Path $env:USERPROFILE '.config\oh-my-posh\blueish.omp.json'
+$profileTargets = @(
+    $PROFILE,
+    (Join-Path $env:USERPROFILE 'Documents\PowerShell\Microsoft.PowerShell_profile.ps1'),
+    (Join-Path $env:USERPROFILE 'Documents\WindowsPowerShell\Microsoft.PowerShell_profile.ps1')
+) | Select-Object -Unique
+
 switch ($Action) {
-    'Detect' { Write-Host "PowerShell profile exists: $(Test-Path $PROFILE); oh-my-posh config exists: $(Test-Path $ompConfig)" }
+    'Detect' {
+        $profileCount = @($profileTargets | Where-Object { Test-Path $_ }).Count
+        Write-Host "PowerShell profiles present: $profileCount/$($profileTargets.Count); oh-my-posh config exists: $(Test-Path $ompConfig)"
+    }
     'Verify' {
-        $ready = ((Test-Path $PROFILE) -and (Test-Path $ompConfig))
+        $ready = ((@($profileTargets | Where-Object { Test-Path $_ }).Count -eq $profileTargets.Count) -and (Test-Path $ompConfig))
         Write-Host "Shell config ready: $ready"
         if ($ready) { exit 0 } else { exit 1 }
     }
@@ -28,12 +37,6 @@ switch ($Action) {
             Write-Host 'Shell config source files are missing.'
             exit 1
         }
-
-        $profileTargets = @(
-            $PROFILE,
-            (Join-Path $env:USERPROFILE 'Documents\PowerShell\Microsoft.PowerShell_profile.ps1'),
-            (Join-Path $env:USERPROFILE 'Documents\WindowsPowerShell\Microsoft.PowerShell_profile.ps1')
-        ) | Select-Object -Unique
 
         foreach ($profileTarget in $profileTargets) {
             $profileDir = Split-Path -Parent $profileTarget
