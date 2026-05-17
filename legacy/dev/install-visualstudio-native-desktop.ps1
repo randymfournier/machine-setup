@@ -94,27 +94,50 @@ function Get-VisualStudioInstallPaths {
 
 function Find-MsvcLinker {
     $candidates = @()
+    $preferredPatterns = @(
+        'VC\Tools\MSVC\*\bin\Hostx64\x64\link.exe',
+        'VC\Tools\MSVC\*\bin\Hostx86\x64\link.exe',
+        'VC\Tools\MSVC\*\bin\Hostx64\x86\link.exe',
+        'VC\Tools\MSVC\*\bin\Hostx86\x86\link.exe',
+        'VC\Tools\MSVC\*\bin\*\*\link.exe'
+    )
 
     if (Test-Path $VsWhereExe) {
-        $installPaths = & $VsWhereExe -products * -requires $VcToolsComponentId -property installationPath 2>$null
+        $installPaths = @(& $VsWhereExe -products * -requires $VcToolsComponentId -property installationPath 2>$null)
+        if (-not $installPaths -or $installPaths.Count -eq 0) {
+            $installPaths = @(& $VsWhereExe -products * -property installationPath 2>$null)
+        }
         foreach ($installPath in $installPaths) {
             if ($installPath -and (Test-Path $installPath)) {
-                $pattern = Join-Path $installPath 'VC\Tools\MSVC\*\bin\Hostx64\x64\link.exe'
-                $candidates += Get-ChildItem -Path $pattern -ErrorAction SilentlyContinue | Select-Object -ExpandProperty FullName
+                foreach ($relativePattern in $preferredPatterns) {
+                    $pattern = Join-Path $installPath $relativePattern
+                    $candidates += Get-ChildItem -Path $pattern -ErrorAction SilentlyContinue | Select-Object -ExpandProperty FullName
+                }
             }
         }
     }
 
     $fallbackPatterns = @(
         (Join-Path ${env:ProgramFiles} 'Microsoft Visual Studio\2022\*\VC\Tools\MSVC\*\bin\Hostx64\x64\link.exe'),
-        (Join-Path ${env:ProgramFiles(x86)} 'Microsoft Visual Studio\2022\*\VC\Tools\MSVC\*\bin\Hostx64\x64\link.exe')
+        (Join-Path ${env:ProgramFiles} 'Microsoft Visual Studio\2022\*\VC\Tools\MSVC\*\bin\Hostx86\x64\link.exe'),
+        (Join-Path ${env:ProgramFiles} 'Microsoft Visual Studio\2022\*\VC\Tools\MSVC\*\bin\Hostx64\x86\link.exe'),
+        (Join-Path ${env:ProgramFiles} 'Microsoft Visual Studio\2022\*\VC\Tools\MSVC\*\bin\Hostx86\x86\link.exe'),
+        (Join-Path ${env:ProgramFiles(x86)} 'Microsoft Visual Studio\2022\*\VC\Tools\MSVC\*\bin\Hostx64\x64\link.exe'),
+        (Join-Path ${env:ProgramFiles(x86)} 'Microsoft Visual Studio\2022\*\VC\Tools\MSVC\*\bin\Hostx86\x64\link.exe'),
+        (Join-Path ${env:ProgramFiles(x86)} 'Microsoft Visual Studio\2022\*\VC\Tools\MSVC\*\bin\Hostx64\x86\link.exe'),
+        (Join-Path ${env:ProgramFiles(x86)} 'Microsoft Visual Studio\2022\*\VC\Tools\MSVC\*\bin\Hostx86\x86\link.exe'),
+        (Join-Path ${env:ProgramFiles} 'Microsoft Visual Studio\2022\*\VC\Tools\MSVC\*\bin\*\*\link.exe'),
+        (Join-Path ${env:ProgramFiles(x86)} 'Microsoft Visual Studio\2022\*\VC\Tools\MSVC\*\bin\*\*\link.exe')
     )
 
     foreach ($pattern in $fallbackPatterns) {
         $candidates += Get-ChildItem -Path $pattern -ErrorAction SilentlyContinue | Select-Object -ExpandProperty FullName
     }
 
-    $found = $candidates | Where-Object { $_ -and (Test-Path $_) } | Select-Object -First 1
+    $found = $candidates |
+        Where-Object { $_ -and (Test-Path $_) } |
+        Sort-Object @{ Expression = { if ($_ -like '*\Hostx64\x64\link.exe') { 0 } elseif ($_ -like '*\x64\link.exe') { 1 } else { 2 } } }, @{ Expression = { $_ } } |
+        Select-Object -First 1
     return $found
 }
 
@@ -156,7 +179,7 @@ function Invoke-VsInstallerModify {
     Write-Host "Adding Desktop development with C++ workload to:" -ForegroundColor Cyan
     Write-Host "  $InstallPath" -ForegroundColor DarkGray
 
-    $args = "modify --installPath `"$InstallPath`" --add $WorkloadId --includeRecommended --quiet --norestart"
+    $args = "modify --installPath `"$InstallPath`" --add $WorkloadId --add $VcToolsComponentId --includeRecommended --quiet --norestart"
     $exitCode = Invoke-ProcessWithHeartbeat -FilePath $SetupExe -ArgumentList $args -Activity 'Visual Studio workload modify'
 
     if ($exitCode -notin @(0, 3010)) {
@@ -228,7 +251,7 @@ function Install-BuildToolsWithNativeDesktopDirect {
     Write-Host 'This bypasses winget so broken winget/msstore sources do not block the MSVC linker.' -ForegroundColor DarkGray
 
     $bootstrapper = Get-BuildToolsBootstrapper
-    $args = "--quiet --wait --norestart --add $WorkloadId --includeRecommended"
+    $args = "--quiet --wait --norestart --add $WorkloadId --add $VcToolsComponentId --includeRecommended"
     $exitCode = Invoke-ProcessWithHeartbeat -FilePath $bootstrapper -ArgumentList $args -Activity 'Visual Studio Build Tools install'
 
     if ($exitCode -notin @(0, 3010)) {
@@ -254,9 +277,20 @@ Install-BuildToolsWithNativeDesktopDirect
 Refresh-Path
 $linker = Wait-ForMsvcLinker -Seconds 240
 
+if (-not $linker) {
+    $buildToolsPaths = @(Get-VisualStudioInstallPaths | Where-Object { $_ -like '*\BuildTools' })
+    foreach ($installPath in $buildToolsPaths) {
+        Write-Host 'Build Tools is registered, but link.exe is still missing. Modifying Build Tools explicitly...' -ForegroundColor Yellow
+        Invoke-VsInstallerModify -InstallPath $installPath
+        Refresh-Path
+        $linker = Wait-ForMsvcLinker -Seconds 180
+        if ($linker) { break }
+    }
+}
+
 if (-not $linker -and $env:MACHINE_SETUP_ALLOW_FULL_VS_MODIFY -eq '1') {
     Write-Host 'Build Tools did not expose link.exe. Opt-in full Visual Studio modify is enabled.' -ForegroundColor Yellow
-    $installPaths = @(Get-VisualStudioInstallPaths)
+    $installPaths = @(Get-VisualStudioInstallPaths | Where-Object { $_ -notlike '*\BuildTools' })
     foreach ($installPath in $installPaths) {
         Invoke-VsInstallerModify -InstallPath $installPath
         Refresh-Path

@@ -7,9 +7,7 @@
       "label": "Automatic recommended setup",
       "description": "Normal rebuild path for this machine.",
       "tasks": [
-        "drivers.installRecovery",
         "powershell.policy",
-        "winget.repair",
         "git.install",
         "apps.install",
         "screenrec.install",
@@ -35,9 +33,7 @@
       "label": "Minimal recovery setup",
       "description": "Enough to recover input, network, Git, winget, and MSVC.",
       "tasks": [
-        "drivers.installRecovery",
         "powershell.policy",
-        "winget.repair",
         "git.install",
         "visualstudio.msvc"
       ]
@@ -45,9 +41,8 @@
     {
       "id": "apps",
       "label": "Apps only",
-      "description": "Repair winget and install configured desktop apps.",
+      "description": "Install configured desktop apps.",
       "tasks": [
-        "winget.repair",
         "apps.install",
         "screenrec.install",
         "office.install"
@@ -122,9 +117,7 @@
       "path": "tasks/apps/install.ps1",
       "requiresAdmin": true,
       "requiresNetwork": true,
-      "dependencies": [
-        "winget.repair"
-      ],
+      "dependencies": [],
       "rebootBehavior": "MayRequireManualReboot"
     },
     {
@@ -276,30 +269,6 @@
       "label": "Export Wi-Fi/touchpad recovery drivers",
       "description": "Export selected recovery drivers from the current Windows install.",
       "path": "tools/drivers/exportRecovery.ps1"
-    },
-    {
-      "id": "cache.offlineInstallers",
-      "label": "Cache offline recovery installers",
-      "description": "Download App Installer and Visual Studio bootstrappers for offline recovery.",
-      "path": "tools/cache/offlineInstallers.ps1"
-    },
-    {
-      "id": "recoveryUsb.prepare",
-      "label": "Prepare/update recovery USB",
-      "description": "Copy repo, drivers, installers, launchers, and docs to a recovery USB.",
-      "path": "tools/recovery-usb/prepare.ps1"
-    },
-    {
-      "id": "recoveryUsb.validate",
-      "label": "Validate recovery USB",
-      "description": "Validate required recovery USB files.",
-      "path": "tools/recovery-usb/validate.ps1"
-    },
-    {
-      "id": "slipstream.rebuildUsb",
-      "label": "Rebuild/slipstream Windows install USB",
-      "description": "Guided Windows install USB rebuild workflow.",
-      "path": "tools/slipstream/rebuildUsb.ps1"
     },
     {
       "id": "diagnostics.run",

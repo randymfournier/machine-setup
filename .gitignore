@@ -38,14 +38,14 @@ drivers/exported-selected-*/
 assets/drivers/exported-*/
 assets/drivers/exported-selected-*/
 
-# Optional offline recovery assets; keep them on USB/local disk, not GitHub.
+# Downloaded/offline recovery assets; keep generic binary payloads on USB/local disk, not GitHub.
 installers/*.exe
 installers/*.msixbundle
 assets/installers/*.exe
 assets/installers/*.msixbundle
-assets/office/setup.exe
+
+# Office install inputs are part of this repo; only the ODT-generated CDN cache is ignored.
 assets/office/Office/
-assets/office/postInstall.local.ps1
 
 # Local USB staging/export output
 usb-staging/

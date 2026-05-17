@@ -159,6 +159,25 @@ function Test-WingetHealthy {
     return $true
 }
 
+function Test-Network {
+    param(
+        [string]$HostName = 'github.com',
+        [int]$Port = 443,
+        [int]$TimeoutMilliseconds = 3000
+    )
+
+    try {
+        $client = New-Object System.Net.Sockets.TcpClient
+        $iar = $client.BeginConnect($HostName, $Port, $null, $null)
+        $success = $iar.AsyncWaitHandle.WaitOne($TimeoutMilliseconds, $false)
+        if ($success) { $client.EndConnect($iar) }
+        $client.Close()
+        return [bool]$success
+    } catch {
+        return $false
+    }
+}
+
 function Find-LocalInstallerFile {
     param([Parameter(Mandatory=$true)][string]$FileName)
 
@@ -178,6 +197,40 @@ function Find-LocalInstallerFile {
     }
 
     return $null
+}
+
+function Find-LocalGitInstaller {
+    foreach ($fileName in @('Git-64-bit.exe','Git.exe')) {
+        $local = Find-LocalInstallerFile -FileName $fileName
+        if ($local) { return $local }
+    }
+
+    return $null
+}
+
+function Install-GitFromInstaller {
+    param([string]$InstallerPath)
+
+    if (-not $InstallerPath) {
+        $tempRoot = Join-Path $env:TEMP 'machine-setup-installs'
+        New-Item -ItemType Directory -Path $tempRoot -Force | Out-Null
+        $InstallerPath = Join-Path $tempRoot 'Git-64-bit.exe'
+        $uri = 'https://github.com/git-for-windows/git/releases/latest/download/Git-64-bit.exe'
+
+        Write-Host "Downloading Git for Windows installer..." -ForegroundColor Cyan
+        Write-Host "  $uri" -ForegroundColor DarkGray
+        $oldProgress = $ProgressPreference
+        try {
+            $ProgressPreference = 'SilentlyContinue'
+            Invoke-WebRequest -Uri $uri -OutFile $InstallerPath -UseBasicParsing -ErrorAction Stop
+        } finally {
+            if ($null -ne $oldProgress) { $ProgressPreference = $oldProgress }
+        }
+    } else {
+        Write-Host "Using local Git installer: $InstallerPath" -ForegroundColor Green
+    }
+
+    return Invoke-NativeBestEffort -FilePath $InstallerPath -Arguments @('/VERYSILENT','/NORESTART','/NOCANCEL','/SP-') -TimeoutSeconds 300 -Activity 'Git for Windows installer'
 }
 
 function Repair-Winget {
@@ -221,18 +274,31 @@ function Repair-Winget {
 
 # --- Ensure git is installed -----------------------------------------------
 if (-not (Get-Command git -ErrorAction SilentlyContinue)) {
-    if (-not (Test-WingetHealthy)) {
-        Repair-Winget
-    } else {
-        # Fresh installs can have broken source metadata even when winget itself exists.
-        # Run the best-effort repair only because Git is missing and winget may be needed.
-        Repair-Winget
+    $localGitInstaller = Find-LocalGitInstaller
+    $gitExit = 1
+
+    if ($localGitInstaller -or (Test-Network)) {
+        try {
+            $gitExit = Install-GitFromInstaller -InstallerPath $localGitInstaller
+        } catch {
+            Write-Warning "Git installer path failed: $($_.Exception.Message)"
+            $gitExit = 1
+        }
     }
 
-    Write-Host "Installing Git via winget..." -ForegroundColor Cyan
-    $gitExit = Invoke-NativeBestEffort -FilePath 'winget' -Arguments @('install','--id','Git.Git','-e','--source','winget','--accept-package-agreements','--accept-source-agreements','--disable-interactivity') -TimeoutSeconds 900 -Activity 'winget install Git'
     if ($gitExit -ne 0) {
-        throw "Git install failed with exit code $gitExit. If winget source repair is still broken, install Git for Windows manually or use the USB local quickstart, then re-run quickstart."
+        if (-not (Test-WingetHealthy)) {
+            Repair-Winget
+        } else {
+            Write-Host "winget is available; skipping repair and using it only as a Git fallback." -ForegroundColor DarkGray
+        }
+
+        Write-Host "Installing Git via winget..." -ForegroundColor Cyan
+        $gitExit = Invoke-NativeBestEffort -FilePath 'winget' -Arguments @('install','--id','Git.Git','-e','--source','winget','--accept-package-agreements','--accept-source-agreements','--disable-interactivity') -TimeoutSeconds 300 -Activity 'winget install Git'
+    }
+
+    if ($gitExit -ne 0) {
+        throw "Git install failed with exit code $gitExit. Install Git for Windows manually or place Git-64-bit.exe under an installers folder, then re-run quickstart."
     }
 
     Refresh-Path

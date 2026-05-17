@@ -14,6 +14,7 @@ if (-not $RepoRoot) {
 $officeRoot = Join-Path $RepoRoot 'assets\office'
 $setupExe = Join-Path $officeRoot 'setup.exe'
 $configurationXml = Join-Path $officeRoot 'configuration.xml'
+$odtDownloadUrl = 'https://go.microsoft.com/fwlink/?linkid=2244703'
 
 function Test-OfficeInstalled {
     $clickToRun = 'HKLM:\SOFTWARE\Microsoft\Office\ClickToRun\Configuration'
@@ -51,6 +52,41 @@ function Invoke-OfficeDeploymentCommand {
     return $process.ExitCode
 }
 
+function Install-OfficeDeploymentTool {
+    if (Test-Path $setupExe) { return $true }
+
+    if (-not (Test-Path $officeRoot)) {
+        New-Item -ItemType Directory -Path $officeRoot -Force | Out-Null
+    }
+
+    $tempRoot = Join-Path $env:TEMP 'machine-setup-installs'
+    New-Item -ItemType Directory -Path $tempRoot -Force | Out-Null
+    $odtInstaller = Join-Path $tempRoot 'officedeploymenttool.exe'
+
+    Write-Host 'Office Deployment Tool setup.exe was not found. Downloading ODT...' -ForegroundColor Cyan
+    Write-Host "  $odtDownloadUrl" -ForegroundColor DarkGray
+
+    $oldProgress = $ProgressPreference
+    try {
+        $ProgressPreference = 'SilentlyContinue'
+        Invoke-WebRequest -Uri $odtDownloadUrl -OutFile $odtInstaller -UseBasicParsing -ErrorAction Stop
+    } catch {
+        Write-Host "Office Deployment Tool download failed: $($_.Exception.Message)"
+        return $false
+    } finally {
+        if ($null -ne $oldProgress) { $ProgressPreference = $oldProgress }
+    }
+
+    Write-Host "Extracting Office Deployment Tool to: $officeRoot" -ForegroundColor Cyan
+    $process = Start-Process -FilePath $odtInstaller -ArgumentList @('/quiet', "/extract:$officeRoot") -Wait -PassThru
+    if ($process.ExitCode -ne 0) {
+        Write-Host "Office Deployment Tool extraction failed with exit code $($process.ExitCode)."
+        return $false
+    }
+
+    return (Test-Path $setupExe)
+}
+
 $hasSetup = Test-Path $setupExe
 $hasConfig = Test-Path $configurationXml
 $installed = Test-OfficeInstalled
@@ -71,9 +107,12 @@ switch ($Action) {
         }
 
         if (-not $hasSetup) {
-            Write-Host "Office Deployment Tool setup.exe not found: $setupExe"
-            Write-Host 'Skipping Office install. Put setup.exe in assets\office and rerun this task.'
-            exit 10
+            if (-not (Install-OfficeDeploymentTool)) {
+                Write-Host "Office Deployment Tool setup.exe not found: $setupExe"
+                Write-Host 'Office install cannot continue without ODT setup.exe.'
+                exit 10
+            }
+            $hasSetup = Test-Path $setupExe
         }
 
         if (-not $hasConfig) {

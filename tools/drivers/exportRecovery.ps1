@@ -10,7 +10,7 @@ if (-not $RepoRoot) {
 }
 
 $script = Join-Path $RepoRoot 'legacy\drivers\export-selected-drivers.ps1'
-$destination = Join-Path $RepoRoot ("assets\drivers\exported-selected-{0}" -f (Get-Date -Format 'yyyy-MM-dd'))
+$destination = Join-Path $RepoRoot ("drivers\exported-selected-{0}" -f (Get-Date -Format 'yyyy-MM-dd'))
 if (-not (Test-Path $script)) {
     Write-Host "Driver export script not found: $script" -ForegroundColor Red
     exit 1

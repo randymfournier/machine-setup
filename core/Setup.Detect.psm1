@@ -119,25 +119,48 @@ function Find-SetupMsvcLinker {
     $vsInstallerDir = Join-Path ${env:ProgramFiles(x86)} 'Microsoft Visual Studio\Installer'
     $vswhere = Join-Path $vsInstallerDir 'vswhere.exe'
     $componentId = 'Microsoft.VisualStudio.Component.VC.Tools.x86.x64'
+    $relativePatterns = @(
+        'VC\Tools\MSVC\*\bin\Hostx64\x64\link.exe',
+        'VC\Tools\MSVC\*\bin\Hostx86\x64\link.exe',
+        'VC\Tools\MSVC\*\bin\Hostx64\x86\link.exe',
+        'VC\Tools\MSVC\*\bin\Hostx86\x86\link.exe',
+        'VC\Tools\MSVC\*\bin\*\*\link.exe'
+    )
 
     if (Test-Path $vswhere) {
-        $installPaths = & $vswhere -products * -requires $componentId -property installationPath 2>$null
+        $installPaths = @(& $vswhere -products * -requires $componentId -property installationPath 2>$null)
+        if (-not $installPaths -or $installPaths.Count -eq 0) {
+            $installPaths = @(& $vswhere -products * -property installationPath 2>$null)
+        }
         foreach ($installPath in $installPaths) {
             if ($installPath -and (Test-Path $installPath)) {
-                $pattern = Join-Path $installPath 'VC\Tools\MSVC\*\bin\Hostx64\x64\link.exe'
-                $candidates += Get-ChildItem -Path $pattern -ErrorAction SilentlyContinue | Select-Object -ExpandProperty FullName
+                foreach ($relativePattern in $relativePatterns) {
+                    $pattern = Join-Path $installPath $relativePattern
+                    $candidates += Get-ChildItem -Path $pattern -ErrorAction SilentlyContinue | Select-Object -ExpandProperty FullName
+                }
             }
         }
     }
 
     foreach ($pattern in @(
         (Join-Path ${env:ProgramFiles} 'Microsoft Visual Studio\2022\*\VC\Tools\MSVC\*\bin\Hostx64\x64\link.exe'),
-        (Join-Path ${env:ProgramFiles(x86)} 'Microsoft Visual Studio\2022\*\VC\Tools\MSVC\*\bin\Hostx64\x64\link.exe')
+        (Join-Path ${env:ProgramFiles} 'Microsoft Visual Studio\2022\*\VC\Tools\MSVC\*\bin\Hostx86\x64\link.exe'),
+        (Join-Path ${env:ProgramFiles} 'Microsoft Visual Studio\2022\*\VC\Tools\MSVC\*\bin\Hostx64\x86\link.exe'),
+        (Join-Path ${env:ProgramFiles} 'Microsoft Visual Studio\2022\*\VC\Tools\MSVC\*\bin\Hostx86\x86\link.exe'),
+        (Join-Path ${env:ProgramFiles(x86)} 'Microsoft Visual Studio\2022\*\VC\Tools\MSVC\*\bin\Hostx64\x64\link.exe'),
+        (Join-Path ${env:ProgramFiles(x86)} 'Microsoft Visual Studio\2022\*\VC\Tools\MSVC\*\bin\Hostx86\x64\link.exe'),
+        (Join-Path ${env:ProgramFiles(x86)} 'Microsoft Visual Studio\2022\*\VC\Tools\MSVC\*\bin\Hostx64\x86\link.exe'),
+        (Join-Path ${env:ProgramFiles(x86)} 'Microsoft Visual Studio\2022\*\VC\Tools\MSVC\*\bin\Hostx86\x86\link.exe'),
+        (Join-Path ${env:ProgramFiles} 'Microsoft Visual Studio\2022\*\VC\Tools\MSVC\*\bin\*\*\link.exe'),
+        (Join-Path ${env:ProgramFiles(x86)} 'Microsoft Visual Studio\2022\*\VC\Tools\MSVC\*\bin\*\*\link.exe')
     )) {
         $candidates += Get-ChildItem -Path $pattern -ErrorAction SilentlyContinue | Select-Object -ExpandProperty FullName
     }
 
-    $candidates | Where-Object { $_ -and (Test-Path $_) } | Select-Object -First 1
+    $candidates |
+        Where-Object { $_ -and (Test-Path $_) } |
+        Sort-Object @{ Expression = { if ($_ -like '*\Hostx64\x64\link.exe') { 0 } elseif ($_ -like '*\x64\link.exe') { 1 } else { 2 } } }, @{ Expression = { $_ } } |
+        Select-Object -First 1
 }
 
 function Test-SetupMsvcLinker {
